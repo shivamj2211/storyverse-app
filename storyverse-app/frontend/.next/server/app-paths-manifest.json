@@ -1,14 +1,4 @@
 {
-  "/library/page": "app/library/page.js",
   "/page": "app/page.js",
-  "/stories/page": "app/stories/page.js",
-  "/saved/page": "app/saved/page.js",
-  "/premium/page": "app/premium/page.js",
-  "/admin/page": "app/admin/page.js",
-  "/admin/stories/page": "app/admin/stories/page.js",
-  "/admin/genres/page": "app/admin/genres/page.js",
-  "/admin/coins/page": "app/admin/coins/page.js",
-  "/admin/users/page": "app/admin/users/page.js",
-  "/admin/rewards/page": "app/admin/rewards/page.js",
-  "/admin/stories/upload/page": "app/admin/stories/upload/page.js"
+  "/profile/page": "app/profile/page.js"
 }
