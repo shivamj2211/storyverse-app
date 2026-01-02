@@ -135,7 +135,7 @@ export default function LoginPage() {
 
                 <div className="mt-4 flex items-center justify-between">
                   <div>
-                    <div className="text-white font-semibold">Meera</div>
+                    <div className="text-white font-semibold">Surbhi</div>
                     <div className="text-xs text-white/60">
                       Reader • Drama Path
                     </div>

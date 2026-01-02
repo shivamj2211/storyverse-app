@@ -205,7 +205,7 @@ export default function SignupPage() {
 
               <div className="mt-4 flex items-center justify-between">
                 <div>
-                  <div className="text-white font-semibold">Aarav</div>
+                  <div className="text-white font-semibold">Satyendra</div>
                   <div className="text-xs text-white/60">
                     Reader • Mystery Run
                   </div>
