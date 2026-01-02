@@ -594,7 +594,7 @@ button {
 }
 
 .reading-shell{
-  max-width: 820px;
+  max-width: 1020px;
   margin: 0 auto;
 }
 
@@ -602,10 +602,15 @@ button {
   background: rgba(255,255,255,0.78);
   border: 1px solid rgba(120,53,15,0.20);
   border-radius: 28px;
-  padding: 52px 48px;
+  padding: 30px 28px;
   box-shadow:
     0 28px 80px rgba(0,0,0,0.14),
     inset 0 1px 0 rgba(255,255,255,0.7);
+}
+@media (max-width: 640px){
+  .reading-card{
+    padding: 15px 15px;
+  }
 }
 
 /* Typography */
@@ -914,7 +919,7 @@ button {
 }
 
 .parchment-shell-wide{
-  max-width: 920px;
+  max-width: 1020px;
   margin: 0 auto;
 }
 
@@ -1909,3 +1914,36 @@ button {
     radial-gradient(500px 200px at 30% 20%, rgba(15,118,110,0.18), transparent 60%),
     linear-gradient(135deg, #f6ead6, #fbf3e6);
 }
+
+
+
+/* ✅ Buttons: stack on mobile */
+.primary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (min-width: 640px) {
+  .primary-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
+.stat-value {
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+@media (min-width: 640px) {
+  .stat-value {
+    font-size: 34px;
+  }
+}
+
+/* Optional: hide scrollbar but keep scroll */
+.journey-stepper ::-webkit-scrollbar { height: 0px; }
+.journey-stepper { scrollbar-width: none; }
+

@@ -34,78 +34,105 @@ function CheckIcon() {
   );
 }
 
+/**
+ * ✅ Mobile-friendly, ONE-LINE, horizontally scrollable stepper
+ * - Stays in one row
+ * - Swipe to scroll on mobile
+ * - Scroll-snap so each step aligns nicely
+ */
 export default function JourneyStepper({ totalSteps, currentStep }: Props) {
   const steps = Math.min(totalSteps || 5, 5);
   const active = clamp(currentStep || 1, 1, steps);
 
   return (
     <div
-      className="journey-stepper w-full rounded-2xl bg-white shadow-[0_8px_30px_rgba(0,0,0,0.10)] border border-slate-100 p-4 sm:p-6"
+      className="journey-stepper w-full rounded-2xl bg-white shadow-[0_8px_30px_rgba(0,0,0,0.10)] border border-slate-100 p-3 sm:p-5"
       role="navigation"
       aria-label="Journey steps"
     >
-      <div className="journey-stepper-row flex items-start justify-between gap-2 sm:gap-4">
-        {Array.from({ length: steps }).map((_, idx) => {
-          const stepNo = idx + 1;
-          const isCompleted = stepNo < active;
-          const isActive = stepNo === active;
-          const isPending = stepNo > active;
+      {/* ✅ Scroll container */}
+      <div className="relative">
+        <div
+          className="
+            flex flex-nowrap items-start gap-3
+            overflow-x-auto overscroll-x-contain
+            pb-2
+            snap-x snap-mandatory
+            [-webkit-overflow-scrolling:touch]
+          "
+        >
+          {Array.from({ length: steps }).map((_, idx) => {
+            const stepNo = idx + 1;
+            const isCompleted = stepNo < active;
+            const isActive = stepNo === active;
 
-          const status = isCompleted ? "Completed" : isActive ? "In Progress" : "Pending";
-          const title = STEP_META[idx]?.title ?? `Step ${stepNo}`;
+            const status = isCompleted ? "Completed" : isActive ? "In progress" : "Pending";
+            const title = STEP_META[idx]?.title ?? `Step ${stepNo}`;
 
-          const circleStateClass = isCompleted
-            ? "journey-completed"
-            : isActive
-            ? "journey-active"
-            : "journey-pending";
+            const circleStateClass = isCompleted
+              ? "journey-completed"
+              : isActive
+              ? "journey-active"
+              : "journey-pending";
 
-          const statusClass = isCompleted
-            ? "journey-status-completed"
-            : isActive
-            ? "journey-status-active"
-            : "journey-status-pending";
+            const statusClass = isCompleted
+              ? "journey-status-completed"
+              : isActive
+              ? "journey-status-active"
+              : "journey-status-pending";
 
-          const fillClass = isCompleted
-            ? "journey-fill-completed"
-            : isActive
-            ? "journey-fill-active"
-            : "journey-fill-pending";
+            const fillClass = isCompleted
+              ? "journey-fill-completed"
+              : isActive
+              ? "journey-fill-active"
+              : "journey-fill-pending";
 
-          return (
-            <div key={stepNo} className="journey-step flex-1">
-              {/* top row */}
-              <div className="journey-top flex items-center">
-                {/* circle */}
-                <div className={`journey-circle ${circleStateClass}`}>
-                  {isCompleted ? (
-                    <CheckIcon />
-                  ) : (
-                    <span className="journey-dot" />
+            return (
+              <div
+                key={stepNo}
+                className="
+                  snap-start
+                  min-w-[150px] sm:min-w-0
+                  shrink-0 sm:shrink
+                  rounded-2xl border border-slate-100 bg-white
+                  px-3 py-3
+                "
+              >
+                {/* top row */}
+                <div className="flex items-center">
+                  {/* circle */}
+                  <div className={`journey-circle ${circleStateClass}`}>
+                    {isCompleted ? <CheckIcon /> : <span className="journey-dot" />}
+                  </div>
+
+                  {/* connector inside card (tiny, so it looks like a continuous stepper) */}
+                  {stepNo !== steps && (
+                    <div className="ml-2 h-[3px] flex-1 rounded-full bg-slate-200 overflow-hidden">
+                      <div className={`h-full ${fillClass}`} />
+                    </div>
                   )}
                 </div>
 
-                {/* connector */}
-                {stepNo !== steps && (
-                  <div className="journey-connector mx-2 sm:mx-3 h-[3px] flex-1 rounded-full bg-slate-200 overflow-hidden">
-                    <div className={`journey-connector-fill ${fillClass}`} />
+                {/* labels */}
+                <div className="mt-2 min-w-0">
+                  <div className="text-[10px] font-semibold tracking-wider text-slate-500 whitespace-nowrap">
+                    STEP {stepNo}
                   </div>
-                )}
+                  <div className="text-sm font-semibold text-slate-900 leading-tight whitespace-nowrap">
+                    {title}
+                  </div>
+                  <div className={`mt-1 text-[11px] font-medium ${statusClass} whitespace-nowrap`}>
+                    {status}
+                  </div>
+                </div>
               </div>
+            );
+          })}
+        </div>
 
-              {/* labels */}
-              <div className="journey-labels mt-3">
-                <div className="journey-stepno text-xs font-semibold tracking-wider text-slate-500">
-                  STEP {stepNo}
-                </div>
-                <div className="journey-title text-sm font-semibold text-slate-900">{title}</div>
-                <div className={`journey-status mt-1 text-xs font-medium ${statusClass}`}>
-                  {status}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {/* ✅ subtle edge fades (optional) */}
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-white to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-white to-transparent" />
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, authHeaders, getToken } from "./lib/api";
@@ -138,7 +138,7 @@ export default function StoriesPage() {
         runs7d: safeNumber(s.runs7d),
       })) as Story[];
 
-            // ✅ Frontend fallback filters (in case backend doesn't filter correctly)
+      // ✅ Frontend fallback filters (in case backend doesn't filter correctly)
       let filteredIncoming = incoming;
 
       if (category === "saved") {
@@ -150,8 +150,6 @@ export default function StoriesPage() {
       }
 
       if (category === "new") {
-        // basic fallback: keep newest-ish order from backend and show first page only
-        // (better if backend provides createdAt/updatedAt)
         filteredIncoming = filteredIncoming.slice(0, limit);
       }
 
@@ -160,18 +158,22 @@ export default function StoriesPage() {
           .sort((a, b) => (b.runs7d || 0) - (a.runs7d || 0))
           .slice(0, limit);
       }
-            // ✅ Rating fallback (IMPORTANT)
+
+      // ✅ Rating fallback
       if (minRating > 0) {
         filteredIncoming = filteredIncoming.filter((s) => (s.avgRating || 0) >= minRating);
       }
 
+      // total fallback
+      const totalFromApi = safeNumber((data as any).total);
+      const effectiveTotal =
+        totalFromApi > 0
+          ? totalFromApi
+          : reset
+          ? incoming.length
+          : Math.max(total, offset + incoming.length);
 
-           // total fallback: if backend doesn't send total, use count we have
-        const totalFromApi = safeNumber((data as any).total);
-        const effectiveTotal = totalFromApi > 0 ? totalFromApi : (reset ? incoming.length : Math.max(total, offset + incoming.length));
-
-        setTotal(effectiveTotal);
-        const canLoadMore = total > 0 ? stories.length < total : false;
+      setTotal(effectiveTotal);
 
       if (reset) {
         setStories(filteredIncoming);
@@ -180,7 +182,6 @@ export default function StoriesPage() {
         setStories((prev) => [...prev, ...filteredIncoming]);
         setOffset((prev) => prev + filteredIncoming.length);
       }
-
     } catch {
       setError("Unable to fetch stories");
       if (reset) setStories([]);
@@ -190,14 +191,12 @@ export default function StoriesPage() {
     }
   }
 
-  // Initial load
   useEffect(() => {
     fetchGenres();
     fetchStories(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-fetch when filters change (reset pagination)
   useEffect(() => {
     fetchStories(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -258,7 +257,8 @@ export default function StoriesPage() {
     }
   }
 
-  const canLoadMore = stories.length < total;
+  const canLoadMore = total > 0 ? stories.length < total : false;
+  const selectedCount = selectedGenres.length;
 
   if (loading) {
     return (
@@ -293,45 +293,52 @@ export default function StoriesPage() {
     );
   }
 
-  const selectedCount = selectedGenres.length;
-
   return (
     <main className="parchment-wrap">
-      <div className="parchment-shell-wide space-y-6">
-        <div className="parchment-panel">
-          <div className="panel-sticky">
-            <div className="parchment-kicker">Stories</div>
-            <div className="parchment-h1">Choose your next journey</div>
-            <p className="parchment-sub">
-              Filter by genre & rating. Trending uses real 7-day runs.
-            </p>
+      {/* ✅ Less padding on mobile */}
+      <div className="parchment-shell-wide space-y-4 sm:space-y-6 px-3 sm:px-0">
+        {/* ✅ Compact attractive header (small padding, mobile-friendly text) */}
+        <div className="parchment-panel p-3 sm:p-6">
+          <div className="panel-sticky space-y-3 sm:space-y-4">
+            {/* Hero */}
+            <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50 p-3 sm:p-5">
+              <div className="parchment-kicker">Stories</div>
+              <h1 className="text-[22px] sm:text-4xl font-extrabold tracking-tight text-slate-900 leading-tight">
+                Choose your next journey
+              </h1>
+              <p className="mt-1 text-[13px] sm:text-base text-slate-600 leading-relaxed">
+                Filter by genre & rating. Trending uses real 7-day runs.
+              </p>
 
-            <div className="tab-row">
-              <Link className="tab-btn tab-btn-primary" href="/stories">
-                Stories
-              </Link>
-              <Link className="tab-btn" href="/saved">
-                Saved
-              </Link>
-              <Link className="tab-btn" href="/runs">
-                Continue Reading
-              </Link>
-              <Link className="tab-btn" href="/premium">
-                Upgrade
-              </Link>
+              {/* ✅ Tabs: one line, swipeable on mobile */}
+              <div className="mt-3 flex flex-nowrap gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+                <Link className="tab-btn tab-btn-primary shrink-0" href="/stories">
+                  Stories
+                </Link>
+                <Link className="tab-btn shrink-0" href="/saved">
+                  Saved
+                </Link>
+                <Link className="tab-btn shrink-0" href="/runs">
+                  Continue
+                </Link>
+                <Link className="tab-btn shrink-0" href="/premium">
+                  Upgrade
+                </Link>
+              </div>
             </div>
 
-            <div className="parchment-controls">
+            {/* ✅ Controls: stacked on mobile, no huge padding */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search stories by title or summary…"
-                className="parchment-input"
+                placeholder="Search by title or summary…"
+                className="parchment-input text-sm py-2.5"
               />
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortKey)}
-                className="parchment-select"
+                className="parchment-select text-sm py-2.5"
               >
                 <option value="updated">Recently Updated</option>
                 <option value="rating">Top Rated</option>
@@ -340,38 +347,39 @@ export default function StoriesPage() {
               </select>
             </div>
 
-            <div className="stories-toolbar">
-              <div className="stories-pills">
+            {/* ✅ Chips: wrap + small text (mobile) */}
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
                 <button
-                  className={`story-chip ${category === "all" ? "chip-active" : ""}`}
+                  className={`story-chip text-xs sm:text-sm ${category === "all" ? "chip-active" : ""}`}
                   onClick={() => setCategory("all")}
                   type="button"
                 >
                   All
                 </button>
                 <button
-                  className={`story-chip ${category === "saved" ? "chip-active" : ""}`}
+                  className={`story-chip text-xs sm:text-sm ${category === "saved" ? "chip-active" : ""}`}
                   onClick={() => setCategory("saved")}
                   type="button"
                 >
                   Saved
                 </button>
                 <button
-                  className={`story-chip ${category === "top" ? "chip-active" : ""}`}
+                  className={`story-chip text-xs sm:text-sm ${category === "top" ? "chip-active" : ""}`}
                   onClick={() => setCategory("top")}
                   type="button"
                 >
-                  ⭐ Top Rated
+                  ⭐ Top
                 </button>
                 <button
-                  className={`story-chip ${category === "new" ? "chip-active" : ""}`}
+                  className={`story-chip text-xs sm:text-sm ${category === "new" ? "chip-active" : ""}`}
                   onClick={() => setCategory("new")}
                   type="button"
                 >
                   🆕 New
                 </button>
                 <button
-                  className={`story-chip ${category === "trending" ? "chip-active" : ""}`}
+                  className={`story-chip text-xs sm:text-sm ${category === "trending" ? "chip-active" : ""}`}
                   onClick={() => setCategory("trending")}
                   type="button"
                 >
@@ -379,24 +387,26 @@ export default function StoriesPage() {
                 </button>
               </div>
 
-              <div className="stories-pills">
-                <span className="stories-small-label">Rating</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] sm:text-xs font-semibold tracking-wide text-slate-500">
+                  RATING
+                </span>
                 <button
-                  className={`story-chip ${minRating === 0 ? "chip-active" : ""}`}
+                  className={`story-chip text-xs sm:text-sm ${minRating === 0 ? "chip-active" : ""}`}
                   onClick={() => setMinRating(0)}
                   type="button"
                 >
                   All
                 </button>
                 <button
-                  className={`story-chip ${minRating === 4 ? "chip-active" : ""}`}
+                  className={`story-chip text-xs sm:text-sm ${minRating === 4 ? "chip-active" : ""}`}
                   onClick={() => setMinRating(4)}
                   type="button"
                 >
                   4+
                 </button>
                 <button
-                  className={`story-chip ${minRating === 4.5 ? "chip-active" : ""}`}
+                  className={`story-chip text-xs sm:text-sm ${minRating === 4.5 ? "chip-active" : ""}`}
                   onClick={() => setMinRating(4.5)}
                   type="button"
                 >
@@ -405,19 +415,22 @@ export default function StoriesPage() {
               </div>
             </div>
 
-            <div className="stories-genres">
-              <div className="stories-genres-head">
-                <span className="stories-small-label">Genres</span>
-                <span className="stories-count">
+            {/* ✅ Genres: swipeable row on mobile (keeps space), wraps on desktop */}
+            <div className="rounded-2xl border border-slate-100 bg-white p-3 sm:p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] sm:text-xs font-semibold tracking-wide text-slate-500">
+                  GENRES
+                </span>
+                <span className="text-[11px] sm:text-xs text-slate-500">
                   {stories.length} shown
-                  {total > 0 && <span className="stories-count-muted"> / {total}</span>}
+                  {total > 0 && <span className="opacity-70"> / {total}</span>}
                 </span>
               </div>
 
-              <div className="stories-genre-chips">
+              <div className="mt-2 flex flex-nowrap gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
                 <button
                   type="button"
-                  className={`story-chip ${selectedCount === 0 ? "chip-active" : ""}`}
+                  className={`story-chip text-xs sm:text-sm shrink-0 ${selectedCount === 0 ? "chip-active" : ""}`}
                   onClick={() => setSelectedGenres([])}
                 >
                   All Genres
@@ -429,7 +442,7 @@ export default function StoriesPage() {
                     <button
                       key={g.key}
                       type="button"
-                      className={`story-chip ${active ? "chip-active" : ""}`}
+                      className={`story-chip text-xs sm:text-sm shrink-0 ${active ? "chip-active" : ""}`}
                       onClick={() => toggleGenre(g.key)}
                       title={g.label}
                     >
@@ -439,10 +452,14 @@ export default function StoriesPage() {
                 })}
               </div>
 
-              {(q.trim() || selectedCount > 0 || category !== "all" || minRating !== 0 || sort !== "updated") && (
-                <div className="stories-reset-row">
+              {(q.trim() ||
+                selectedCount > 0 ||
+                category !== "all" ||
+                minRating !== 0 ||
+                sort !== "updated") && (
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                   <button
-                    className="runs-clear"
+                    className="runs-clear text-sm"
                     onClick={() => {
                       setQ("");
                       setCategory("all");
@@ -456,7 +473,7 @@ export default function StoriesPage() {
                   </button>
 
                   {selectedCount > 0 && (
-                    <span className="stories-small-hint">
+                    <span className="text-[12px] text-slate-600">
                       Filtering by <b>{selectedCount}</b> genre{selectedCount > 1 ? "s" : ""}
                     </span>
                   )}
@@ -466,70 +483,87 @@ export default function StoriesPage() {
           </div>
         </div>
 
+        {/* ✅ Results */}
         {stories.length === 0 ? (
-          <div className="parchment-panel">
+          <div className="parchment-panel p-3 sm:p-6">
             <div className="parchment-kicker">No results</div>
             <div className="parchment-h1">No stories match your filters</div>
             <p className="parchment-sub">Try removing filters or changing keywords.</p>
           </div>
         ) : (
           <>
-            <div className="story-grid story-grid-2col">
+            {/* ✅ Mobile: 1 column, Desktop: 2 columns */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-5">
               {stories.map((story) => {
                 const rating = safeNumber(story.avgRating).toFixed(2);
                 const busy = busyId === story.id;
                 const g = (story.genres || []).slice(0, 3);
 
                 return (
-                  <div key={story.id} className="story-grid-card">
-                    <div className="story-cover">
+                  <div
+                    key={story.id}
+                    className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden"
+                  >
+                    {/* Cover */}
+                    <div className="relative h-36 sm:h-44 bg-slate-50">
                       {story.coverImageUrl ? (
                         <img
                           src={story.coverImageUrl}
                           alt={story.title}
                           loading="lazy"
+                          className="h-full w-full object-cover"
                         />
                       ) : (
-                        <div className="story-cover-fallback">
-                          <span>{story.title.slice(0, 1)}</span>
+                        <div className="h-full w-full flex items-center justify-center">
+                          <div className="h-16 w-16 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-3xl font-extrabold">
+                            {story.title.slice(0, 1)}
+                          </div>
                         </div>
                       )}
-                    </div>
 
-
-                    <div className="p-6">
-                      <div className="story-card-top">
-                        <div className="min-w-0">
-                          <h2 className="story-card-title">
-                            <Link href={`/stories/${story.id}`}>{story.title}</Link>
-                          </h2>
-                          <p className="story-card-summary">{story.summary}</p>
-                        </div>
-
-                        <span className="story-chip">
+                      {/* Rating pill */}
+                      <div className="absolute top-2 right-2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/95 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-sm">
                           ⭐ <b>{rating}</b>
                         </span>
                       </div>
+                    </div>
+
+                    {/* Content (✅ less padding on mobile) */}
+                    <div className="p-3 sm:p-5">
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900 leading-snug">
+                        <Link href={`/stories/${story.id}`} className="hover:underline">
+                          {story.title}
+                        </Link>
+                      </h2>
+
+                      <p className="mt-1 text-[13px] sm:text-sm text-slate-600 leading-relaxed line-clamp-2">
+                        {story.summary}
+                      </p>
 
                       {!!g.length && (
-                        <div className="story-genre-preview">
+                        <div className="mt-2 flex flex-wrap gap-1.5">
                           {g.map((x) => (
-                            <span key={x.key} className="story-mini-chip">
+                            <span
+                              key={x.key}
+                              className="inline-flex items-center rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700"
+                            >
                               {x.label}
                             </span>
                           ))}
                           {(story.genres || []).length > 3 && (
-                            <span className="story-mini-more">
+                            <span className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
                               +{(story.genres || []).length - 3}
                             </span>
                           )}
                         </div>
                       )}
 
-                      <div className="story-actions mt-5 flex gap-2">
+                      {/* ✅ Mobile-friendly actions: full width buttons */}
+                      <div className="mt-3 grid grid-cols-2 gap-2">
                         <button
                           onClick={() => handleRead(story.id)}
-                          className="story-btn story-btn-primary"
+                          className="story-btn story-btn-primary text-sm py-2"
                           disabled={busy}
                           type="button"
                         >
@@ -538,7 +572,9 @@ export default function StoriesPage() {
 
                         <button
                           onClick={() => toggleSave(story)}
-                          className={`story-btn ${story.saved ? "story-btn-saved" : "story-btn-ghost"}`}
+                          className={`story-btn text-sm py-2 ${
+                            story.saved ? "story-btn-saved" : "story-btn-ghost"
+                          }`}
                           disabled={busy}
                           type="button"
                         >
@@ -551,15 +587,22 @@ export default function StoriesPage() {
               })}
             </div>
 
-            <div className="parchment-panel" style={{ padding: 22 }}>
-              <div className="primary-actions" style={{ justifyContent: "space-between", width: "100%" }}>
-                <div className="parchment-sub">
-                  Showing <b>{stories.length}</b> of <b>{total}</b>
+            {/* Footer / load more (✅ compact) */}
+            <div className="parchment-panel p-3 sm:p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="text-sm text-slate-700">
+                  Showing <b>{stories.length}</b>
+                  {total > 0 ? (
+                    <>
+                      {" "}
+                      of <b>{total}</b>
+                    </>
+                  ) : null}
                 </div>
 
                 {canLoadMore ? (
                   <button
-                    className="btn-primary"
+                    className="btn-primary w-full sm:w-auto"
                     onClick={() => fetchStories(false)}
                     disabled={loadingMore}
                     type="button"
@@ -567,7 +610,7 @@ export default function StoriesPage() {
                     {loadingMore ? "Loading…" : "Load more"}
                   </button>
                 ) : (
-                  <div className="parchment-sub">You reached the end ✅</div>
+                  <div className="text-sm text-slate-600">You reached the end ✅</div>
                 )}
               </div>
             </div>
