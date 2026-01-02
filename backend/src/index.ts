@@ -40,6 +40,9 @@ const allowedOrigins = [
   "http://127.0.0.1:3000",
   "http://localhost:3001",
   "http://127.0.0.1:3001",
+
+  // ✅ production Vercel URL (add yours)
+  "https://storyverse-surkashi-kerhffc7q-shivam-jaiswals-projects-49ca0bd9.vercel.app",
 ];
 
 app.use(
@@ -48,7 +51,11 @@ app.use(
       // allow server-to-server / curl requests (no origin)
       if (!origin) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
-      return cb(new Error(`CORS blocked for origin: ${origin}`));
+
+        // allow all Vercel preview + prod domains
+        if (origin.endsWith(".vercel.app")) return cb(null, true);
+
+        return cb(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -70,5 +77,5 @@ app.use("/api/admin", adminRoutes);
 const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, () => {
-  console.log(`✅ Backend running on http://localhost:${PORT}`);
+  console.log(`✅ Backend running on port ${PORT}`);
 });
