@@ -27,10 +27,7 @@ if (!process.env.JWT_SECRET) {
 const app = express();
 
 // ✅ request log (keep)
-app.use((req, _res, next) => {
-  console.log("🌐 REQ:", req.method, req.path);
-  next();
-});
+
 
 const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost:3000",
