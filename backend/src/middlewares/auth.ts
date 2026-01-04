@@ -8,6 +8,7 @@ dotenv.config();
 export interface AuthPayload {
   id: string;
   email?: string;
+  plan: "free" | "premium" | "creator";
   is_admin: boolean;
   is_premium: boolean;
 }

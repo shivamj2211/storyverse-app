@@ -1947,3 +1947,17 @@ button {
 .journey-stepper ::-webkit-scrollbar { height: 0px; }
 .journey-stepper { scrollbar-width: none; }
 
+.journey-locked {
+  background: #fee2e2; /* light red */
+  color: #991b1b;      /* deep red */
+  border: 1px solid #fecaca;
+}
+
+.journey-status-locked {
+  color: #b91c1c;
+}
+
+.journey-fill-locked {
+  width: 100%;
+  background: #fecaca;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, authHeaders, getToken } from "../lib/api";
@@ -25,17 +25,25 @@ function resolvePlan(u: MePayload["user"]): "free" | "premium" | "creator" {
 export default function WalletPage() {
   const router = useRouter();
 
+  const [mounted, setMounted] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+
   const [me, setMe] = useState<MePayload["user"] | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const token = useMemo(() => {
-    if (typeof window === "undefined") return null;
-    return getToken();
+  // ✅ ensure first render is identical between server/client
+  useEffect(() => {
+    setMounted(true);
+    setToken(getToken());
   }, []);
 
+  // fetch profile only after token is known
   useEffect(() => {
+    if (!mounted) return;
+
     if (!token) {
       setLoading(false);
+      setMe(null);
       return;
     }
 
@@ -46,14 +54,30 @@ export default function WalletPage() {
           headers: { ...authHeaders() },
           cache: "no-store",
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          setMe(null);
+          return;
+        }
         const data = (await res.json()) as MePayload;
         setMe(data.user);
       } finally {
         setLoading(false);
       }
     })();
-  }, [token]);
+  }, [mounted, token]);
+
+  // ✅ Stable initial HTML (prevents hydration mismatch)
+  if (!mounted) {
+    return (
+      <main className="parchment-wrap">
+        <div className="parchment-shell-wide">
+          <section className="parchment-panel">
+            <p className="text-slate-700/75">Loading wallet…</p>
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   if (!token) {
     return (
@@ -116,21 +140,15 @@ export default function WalletPage() {
   const plan = resolvePlan(me);
   const coins = Number.isFinite(Number(me.coins)) ? Number(me.coins) : 0;
 
-  const unlockAt = 20;
-  const canUnlock = plan !== "free" || coins >= unlockAt;
-
   return (
     <main className="parchment-wrap">
       <div className="parchment-shell-wide space-y-6">
-        {/* Header (clean) */}
         <section className="parchment-panel">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="parchment-kicker">Wallet</div>
               <h1 className="parchment-h1">Coins</h1>
-              <p className="parchment-sub">
-                Earned coins, usage history, and expiry — all in one place.
-              </p>
+              <p className="parchment-sub">Earned coins, usage history, and expiry — all in one place.</p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -144,12 +162,8 @@ export default function WalletPage() {
           </div>
 
           <div className="hr-ink" />
-
-          {/* Compact status strip (no repetition) */}
-          
         </section>
 
-        {/* Advanced wallet UI (history + expiry + used details + progress + recent activity) */}
         <CoinsWallet plan={plan} fallbackCoins={coins} />
       </div>
     </main>

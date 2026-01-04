@@ -8,9 +8,18 @@ import { creditCoinsIfEligible } from "../lib/coinEngine";
 
 const router = Router();
 
+type Plan = "free" | "premium" | "creator";
+
+function normalizePlan(plan: any, isPremium: any): Plan {
+  const p = String(plan || "").toLowerCase();
+  if (p === "premium" || p === "creator" || p === "free") return p as Plan;
+  return isPremium ? "premium" : "free";
+}
+
 function signToken(user: {
   id: string;
   email: string;
+  plan: Plan; // ✅ ADDED
   is_admin: boolean;
   is_premium: boolean;
 }) {
@@ -19,6 +28,7 @@ function signToken(user: {
     {
       id: user.id,
       email: user.email,
+      plan: user.plan, // ✅ ADDED
       is_admin: user.is_admin,
       is_premium: user.is_premium,
     },
@@ -76,9 +86,12 @@ router.post("/signup", async (req: Request, res: Response) => {
     );
     const u = refreshed.rows[0];
 
+    const plan = normalizePlan(u.plan, u.is_premium);
+
     const token = signToken({
       id: u.id,
       email: u.email,
+      plan, // ✅ ADDED
       is_admin: u.is_admin,
       is_premium: u.is_premium,
     });
@@ -92,7 +105,7 @@ router.post("/signup", async (req: Request, res: Response) => {
         full_name: u.full_name,
         age: u.age,
         coins: u.coins ?? 0,
-        plan: u.plan ?? (u.is_premium ? "premium" : "free"),
+        plan,
         is_admin: u.is_admin,
         is_premium: u.is_premium,
       },
@@ -135,9 +148,12 @@ router.post("/login", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Invalid credentials." });
     }
 
+    const plan = normalizePlan(user.plan, user.is_premium);
+
     const token = signToken({
       id: user.id,
       email: user.email,
+      plan, // ✅ ADDED
       is_admin: user.is_admin,
       is_premium: user.is_premium,
     });
@@ -151,7 +167,7 @@ router.post("/login", async (req: Request, res: Response) => {
         full_name: user.full_name,
         age: user.age,
         coins: user.coins ?? 0,
-        plan: user.plan ?? (user.is_premium ? "premium" : "free"),
+        plan,
         is_admin: user.is_admin,
         is_premium: user.is_premium,
       },
@@ -179,6 +195,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
     }
 
     const u = dbRes.rows[0];
+    const plan = normalizePlan(u.plan, u.is_premium);
 
     return res.json({
       user: {
@@ -188,7 +205,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
         full_name: u.full_name,
         age: u.age,
         coins: u.coins ?? 0,
-        plan: u.plan ?? (u.is_premium ? "premium" : "free"),
+        plan,
         is_admin: u.is_admin,
         is_premium: u.is_premium,
       },
@@ -219,6 +236,8 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
     );
 
     const u = updateRes.rows[0];
+    const plan = normalizePlan(u.plan, u.is_premium);
+
     return res.json({
       user: {
         id: u.id,
@@ -227,7 +246,7 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
         full_name: u.full_name,
         age: u.age,
         coins: u.coins ?? 0,
-        plan: u.plan ?? (u.is_premium ? "premium" : "free"),
+        plan,
         is_admin: u.is_admin,
         is_premium: u.is_premium,
       },
@@ -268,9 +287,16 @@ router.patch("/me/email", requireAuth, async (req: AuthRequest, res: Response) =
     );
 
     const u = updateRes.rows[0];
+    const plan = normalizePlan(u.plan, u.is_premium);
 
     // Issue a new token (email changed)
-    const token = signToken({ id: u.id, email: u.email, is_admin: u.is_admin, is_premium: u.is_premium });
+    const token = signToken({
+      id: u.id,
+      email: u.email,
+      plan, // ✅ ADDED
+      is_admin: u.is_admin,
+      is_premium: u.is_premium,
+    });
 
     return res.json({
       token,
@@ -281,7 +307,7 @@ router.patch("/me/email", requireAuth, async (req: AuthRequest, res: Response) =
         full_name: u.full_name,
         age: u.age,
         coins: u.coins ?? 0,
-        plan: u.plan ?? (u.is_premium ? "premium" : "free"),
+        plan,
         is_admin: u.is_admin,
         is_premium: u.is_premium,
       },

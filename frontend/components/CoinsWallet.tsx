@@ -19,7 +19,7 @@ type CoinHistoryItem = {
   created_at: string;
 };
 
-const COIN_UNLOCK_THRESHOLD = 20;
+const COIN_UNLOCK_THRESHOLD = 100;
 const COIN_EXPIRY_YEARS = 1;
 
 function fmtDateTime(iso: string) {
@@ -73,6 +73,16 @@ function activityTitle(h: {
   return h.note ? `Coin update • ${h.note}` : "Coin update";
 }
 
+/** ✅ Robust parser: backend returns { history: [...] } */
+function pickHistoryArray(raw: any): CoinHistoryItem[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw as CoinHistoryItem[];
+  if (Array.isArray(raw.history)) return raw.history as CoinHistoryItem[];
+  if (Array.isArray(raw.items)) return raw.items as CoinHistoryItem[];
+  if (Array.isArray(raw.data)) return raw.data as CoinHistoryItem[];
+  return [];
+}
+
 export default function CoinsWallet({
   plan,
   fallbackCoins,
@@ -96,20 +106,25 @@ export default function CoinsWallet({
   const [useErr, setUseErr] = useState<string | null>(null);
   const [usedHistory, setUsedHistory] = useState<CoinHistoryItem[]>([]);
 
+  /** ✅ Fetch summary always */
   async function fetchCoinSummary() {
     try {
       const res = await fetch(api("/api/coins/summary"), {
         headers: { ...authHeaders() },
         cache: "no-store",
       });
+      const data = await res.json().catch(() => null);
       if (!res.ok) return;
-      const data = (await res.json()) as CoinSummaryResponse;
-      setCoinSummary(data);
+      setCoinSummary({
+        available: Number(data?.available ?? 0),
+        used: Number(data?.used ?? 0),
+      });
     } catch {
       // ignore
     }
   }
 
+  /** ✅ Earned history: call only when modal is opened */
   async function fetchEarnedHistory() {
     setEarnErr(null);
     setEarnLoading(true);
@@ -119,14 +134,14 @@ export default function CoinsWallet({
         cache: "no-store",
       });
 
+      const raw = await res.json().catch(() => null);
+
       if (!res.ok) {
-        setEarnErr("Unable to load earned coin history.");
+        setEarnErr(raw?.error || "Unable to load earned coin history.");
         return;
       }
 
-      const raw = await res.json();
-      const items = Array.isArray(raw) ? raw : raw.items;
-      const all = (items || []) as CoinHistoryItem[];
+      const all = pickHistoryArray(raw);
       // fallback filter in case backend ignores query
       setEarnedHistory(all.filter((x) => x.type === "earn" || x.type === "adjust"));
     } catch {
@@ -136,6 +151,7 @@ export default function CoinsWallet({
     }
   }
 
+  /** ✅ Used history: call only when modal is opened */
   async function fetchUsedHistory() {
     setUseErr(null);
     setUseLoading(true);
@@ -145,14 +161,14 @@ export default function CoinsWallet({
         cache: "no-store",
       });
 
+      const raw = await res.json().catch(() => null);
+
       if (!res.ok) {
-        setUseErr("Unable to load usage history.");
+        setUseErr(raw?.error || "Unable to load usage history.");
         return;
       }
 
-      const raw = await res.json();
-      const items = Array.isArray(raw) ? raw : raw.items;
-      const all = (items || []) as CoinHistoryItem[];
+      const all = pickHistoryArray(raw);
       // fallback filter in case backend ignores query
       setUsedHistory(all.filter((x) => x.type === "redeem"));
     } catch {
@@ -162,15 +178,33 @@ export default function CoinsWallet({
     }
   }
 
+  /** ✅ Initial load: ONLY summary.
+   * Recent activity is derived once we have any history loaded later.
+   */
   useEffect(() => {
-    // load wallet data once
-    (async () => {
-      await fetchCoinSummary();
-      await fetchEarnedHistory();
-      await fetchUsedHistory();
-    })();
+    fetchCoinSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** ✅ When Earn modal opens: load earned history + refresh summary */
+  useEffect(() => {
+    if (!earnOpen) return;
+    (async () => {
+      await fetchEarnedHistory();
+      await fetchCoinSummary();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [earnOpen]);
+
+  /** ✅ When Use modal opens: load used history + refresh summary */
+  useEffect(() => {
+    if (!useOpen) return;
+    (async () => {
+      await fetchUsedHistory();
+      await fetchCoinSummary();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useOpen]);
 
   const availableCoins = coinSummary?.available ?? fallbackCoins;
   const usedCoins = coinSummary?.used ?? 0;
@@ -180,6 +214,10 @@ export default function CoinsWallet({
 
   const smartHint = useMemo(() => hintText(plan, availableCoins), [plan, availableCoins]);
 
+  /** ✅ Recent activity must update on main tab
+   * We merge whatever is currently known (earnedHistory + usedHistory)
+   * And it will update when user opens any modal (because histories load then).
+   */
   const mergedRecent = useMemo(() => {
     return [...(earnedHistory || []), ...(usedHistory || [])]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -192,7 +230,6 @@ export default function CoinsWallet({
       <div className="parchment-panel mt-2">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            {/* <div className="parchment-kicker">Wallet</div> */}
             <div className="parchment-h1" style={{ fontSize: 22 }}>
               Coins & History
             </div>
@@ -214,10 +251,7 @@ export default function CoinsWallet({
               type="button"
               className="h-11 inline-flex items-center justify-center rounded-2xl px-6 text-sm font-extrabold text-white shadow-sm
                          bg-gradient-to-r from-emerald-700 to-amber-700 hover:opacity-95"
-              onClick={async () => {
-                setEarnOpen(true);
-                await fetchEarnedHistory();
-              }}
+              onClick={() => setEarnOpen(true)}
             >
               View Details
             </button>
@@ -265,10 +299,7 @@ export default function CoinsWallet({
               <button
                 type="button"
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-50"
-                onClick={async () => {
-                  setUseOpen(true);
-                  await fetchUsedHistory();
-                }}
+                onClick={() => setUseOpen(true)}
               >
                 Details
               </button>
@@ -346,17 +377,16 @@ export default function CoinsWallet({
               <button
                 type="button"
                 className="text-[11px] font-semibold underline text-slate-900/80 hover:text-slate-900"
-                onClick={async () => {
-                  setEarnOpen(true);
-                  await fetchEarnedHistory();
-                }}
+                onClick={() => setEarnOpen(true)}
               >
                 View earned
               </button>
             </div>
 
             {mergedRecent.length === 0 ? (
-              <div className="mt-3 text-sm text-slate-700/70">No coin activity yet.</div>
+              <div className="mt-3 text-sm text-slate-700/70">
+                No coin activity yet. (Open View Details once to load history.)
+              </div>
             ) : (
               <div className="mt-3 space-y-3">
                 {mergedRecent.map((h) => {
@@ -390,8 +420,7 @@ export default function CoinsWallet({
         <div className="mt-4 rounded-3xl border border-slate-200 bg-white/70 p-4">
           <div className="text-sm font-extrabold text-slate-900">How you earn coins</div>
           <p className="mt-1 text-sm text-slate-700/80">
-            Simple rewards for engagement (values can be adjusted later).
-         While reading, tap Rate → coins are added to your wallet instantly. Once you reach 20 coins, you can continue beyond Chapter 2 on the Free plan.
+            Simple rewards for engagement (values can be adjusted later). While reading, tap Rate → coins are added to your wallet instantly. Once you reach 20 coins, you can continue beyond Chapter 2 on the Free plan.
           </p>
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -479,7 +508,8 @@ export default function CoinsWallet({
                     {earnedHistory.map((h) => {
                       const expiry = addYears(h.created_at, COIN_EXPIRY_YEARS);
                       const left = expiry ? daysLeft(expiry) : null;
-                      const source = h.note || (h.type === "adjust" ? "Admin adjustment" : "Earned reward");
+                      const source =
+                        h.note || (h.type === "adjust" ? "Admin adjustment" : "Earned reward");
 
                       return (
                         <div key={h.id} className="border-b border-slate-100 px-4 py-3 last:border-b-0">

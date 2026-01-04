@@ -9,6 +9,10 @@ type Props = {
   totalSteps: number; // should be 5
   currentStep: number; // 1..5
   picked?: PickedChoice[];
+  
+  // ✅ new (optional)
+  plan?: "free" | "premium" | "creator";
+  unlockedChapters?: number[]; // e.g. [3,4]
 };
 
 const STEP_META = [
@@ -34,14 +38,38 @@ function CheckIcon() {
   );
 }
 
+function LockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M6.5 9V6.8C6.5 4.7 8.2 3 10.3 3c2.1 0 3.8 1.7 3.8 3.8V9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M5.5 9h9c.8 0 1.5.7 1.5 1.5v5c0 .8-.7 1.5-1.5 1.5h-9C4.7 17 4 16.3 4 15.5v-5C4 9.7 4.7 9 5.5 9Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+
+
 /**
  * ✅ Mobile-friendly, ONE-LINE, horizontally scrollable stepper
  * - Stays in one row
  * - Swipe to scroll on mobile
  * - Scroll-snap so each step aligns nicely
  */
-export default function JourneyStepper({ totalSteps, currentStep }: Props) {
-  const steps = Math.min(totalSteps || 5, 5);
+export default function JourneyStepper({
+  totalSteps,
+  currentStep,
+  plan = "free",
+  unlockedChapters = [],
+}: Props) {
+ const steps = Math.min(totalSteps || 5, 5);
   const active = clamp(currentStep || 1, 1, steps);
 
   return (
@@ -63,29 +91,46 @@ export default function JourneyStepper({ totalSteps, currentStep }: Props) {
         >
           {Array.from({ length: steps }).map((_, idx) => {
             const stepNo = idx + 1;
+            const isPaidStep = stepNo >= 3;
+            const isUnlocked = unlockedChapters.includes(stepNo);
+            const isLocked = plan === "free" && isPaidStep && !isUnlocked;
+
             const isCompleted = stepNo < active;
             const isActive = stepNo === active;
 
-            const status = isCompleted ? "Completed" : isActive ? "In progress" : "Pending";
+            const status = isCompleted
+              ? "Completed"
+              : isLocked
+              ? "Locked"
+              : isActive
+              ? "In progress"
+              : "Pending";
+
             const title = STEP_META[idx]?.title ?? `Step ${stepNo}`;
 
             const circleStateClass = isCompleted
-              ? "journey-completed"
-              : isActive
-              ? "journey-active"
-              : "journey-pending";
+            ? "journey-completed"
+            : isLocked
+            ? "journey-locked"
+            : isActive
+            ? "journey-active"
+            : "journey-pending";
 
             const statusClass = isCompleted
-              ? "journey-status-completed"
-              : isActive
-              ? "journey-status-active"
-              : "journey-status-pending";
+            ? "journey-status-completed"
+            : isLocked
+            ? "journey-status-locked"
+            : isActive
+            ? "journey-status-active"
+            : "journey-status-pending";
 
             const fillClass = isCompleted
-              ? "journey-fill-completed"
-              : isActive
-              ? "journey-fill-active"
-              : "journey-fill-pending";
+            ? "journey-fill-completed"
+            : isLocked
+            ? "journey-fill-locked"
+            : isActive
+            ? "journey-fill-active"
+            : "journey-fill-pending";
 
             return (
               <div
@@ -102,7 +147,7 @@ export default function JourneyStepper({ totalSteps, currentStep }: Props) {
                 <div className="flex items-center">
                   {/* circle */}
                   <div className={`journey-circle ${circleStateClass}`}>
-                    {isCompleted ? <CheckIcon /> : <span className="journey-dot" />}
+                   {isCompleted ? <CheckIcon /> : isLocked ? <LockIcon /> : <span className="journey-dot" />}
                   </div>
 
                   {/* connector inside card (tiny, so it looks like a continuous stepper) */}

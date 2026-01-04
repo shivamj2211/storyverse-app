@@ -38,12 +38,14 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 async function buildCurrentNode(runId: string, userId: string) {
   // fetch run and node details
   const runRes = await query(
-    `SELECT r.id as run_id, r.current_node_id, r.is_completed, n.step_no, n.id as node_id, n.title, n.content, n.is_start
-     FROM story_runs r
-     JOIN story_nodes n ON r.current_node_id = n.id
-     WHERE r.id=$1`,
-    [runId]
-  );
+  `SELECT r.id as run_id, r.story_id, r.current_node_id, r.is_completed,
+          n.step_no, n.id as node_id, n.title, n.content, n.is_start
+   FROM story_runs r
+   JOIN story_nodes n ON r.current_node_id = n.id
+   WHERE r.id=$1`,
+  [runId]
+);
+
   if (!runRes.rows.length) {
     throw new Error("Run not found");
   }
@@ -81,6 +83,7 @@ async function buildCurrentNode(runId: string, userId: string) {
   }
 
   return {
+    storyId: run.story_id,
     node: {
       id: run.node_id,
       title: run.title,
@@ -94,13 +97,58 @@ async function buildCurrentNode(runId: string, userId: string) {
   };
 }
 
+//unlock
+async function isChapterUnlocked(
+  userId: string,
+  storyId: string,
+  chapterNumber: number
+) {
+  const q = await query(
+    `SELECT 1 FROM chapter_unlocks
+     WHERE user_id=$1 AND story_id=$2 AND chapter_number=$3`,
+    [userId, storyId, chapterNumber]
+  );
+  return q.rows.length > 0;
+}
+
+function requiredCoinsForChapter(chapterNumber: number) {
+  if (chapterNumber >= 3 && chapterNumber <= 5) return 100;
+  return 0;
+}
+
 // GET /api/runs/:runId/current
 // Returns current node, available choices with average ratings, and whether rating is submitted
 router.get("/:runId/current", requireAuth, async (req: AuthRequest, res: Response) => {
   const runId = req.params.runId;
+
   try {
-    const run = await buildCurrentNode(runId, req.user!.id);
-    return res.json(run);
+    const payload = await buildCurrentNode(runId, req.user!.id);
+
+    // 🔒 ENFORCE CHAPTER LOCK FOR FREE USERS (step 3+)
+    const plan = req.user!.plan; // "free" | "premium" | "creator"
+    const stepNo = Number(payload.node.stepNo);
+
+    if (plan === "free" && stepNo >= 3) {
+      const unlocked = await isChapterUnlocked(req.user!.id, payload.storyId, stepNo);
+      if (!unlocked) {
+        const userQ = await query(`SELECT coins FROM users WHERE id=$1`, [req.user!.id]);
+        const available = Number(userQ.rows?.[0]?.coins ?? 0);
+        const requiredCoins = requiredCoinsForChapter(stepNo);
+
+        
+        return res.status(403).json({
+          code: "CHAPTER_LOCKED",
+          chapterNumber: stepNo,
+          requiredCoins,
+          available,
+          storyId: payload.storyId,
+          runId,
+        });
+      }
+    }
+console.log("DEBUG CURRENT LOCK:", { plan: req.user.plan, stepNo: payload.node.stepNo, storyId: payload.storyId });
+
+    return res.json(payload);
   } catch (err) {
     console.error(err);
     return res.status(404).json({ error: (err as any).message });
@@ -113,6 +161,11 @@ router.post("/:runId/choose", requireAuth, async (req: AuthRequest, res: Respons
   const runId = req.params.runId;
   const { genreKey } = z.object({ genreKey: z.string() }).parse(req.body);
   const userId = req.user!.id;
+  console.log("✅ RUNS /choose HIT", {
+  runId,
+  userId,
+  plan: req.user?.plan,
+});
 
   try {
     // verify run belongs to user and not completed
@@ -151,6 +204,55 @@ router.post("/:runId/choose", requireAuth, async (req: AuthRequest, res: Respons
       return res.status(400).json({ error: "Invalid genre choice" });
     }
     const toNodeId = choiceRes.rows[0].to_node_id;
+    // 🔒 BLOCK FREE USERS FROM STEP 3+ UNLESS UNLOCKED
+const nextNodeRes = await query(
+  "SELECT step_no FROM story_nodes WHERE id=$1",
+  [toNodeId]
+);
+const nextStepNo = Number(nextNodeRes.rows?.[0]?.step_no ?? 0);
+if (String(req.user?.plan || "").toLowerCase() === "free" && nextStepNo >= 3) {
+  console.log("🔒 FORCED LOCK TRIGGERED", { nextStepNo });
+  return res.status(403).json({
+    code: "CHAPTER_LOCKED",
+    chapterNumber: nextStepNo,
+    requiredCoins: 100,
+    available: Number(req.user?.coins ?? 0),
+  });
+}
+
+// Get storyId for unlock check
+const storyRes = await query(
+  "SELECT story_id FROM story_runs WHERE id=$1 AND user_id=$2",
+  [runId, userId]
+);
+
+if (!storyRes.rows.length) {
+  return res.status(404).json({ error: "Run not found" });
+}
+
+const storyId: string = storyRes.rows[0].story_id;
+
+
+if (req.user!.plan === "free" && nextStepNo >= 3) {
+  const unlocked = await isChapterUnlocked(userId, storyId, nextStepNo);
+
+  if (!unlocked) {
+    const userQ = await query("SELECT coins FROM users WHERE id=$1", [userId]);
+    const available = Number(userQ.rows?.[0]?.coins ?? 0);
+    const requiredCoins = requiredCoinsForChapter(nextStepNo);
+  
+   
+
+    return res.status(403).json({
+      code: "CHAPTER_LOCKED",
+      chapterNumber: nextStepNo,
+      requiredCoins,
+      available,
+      storyId,
+      runId,
+    });
+  }
+}
 
     // insert into run_choices
     await query(
@@ -171,6 +273,108 @@ router.post("/:runId/choose", requireAuth, async (req: AuthRequest, res: Respons
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Internal server error" });
+  }
+  
+});
+// ===============================
+// UNLOCK CHAPTER (100 coins)
+// ===============================
+router.post("/:runId/unlock", requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  const runId = req.params.runId;
+  const chapterNumber = Number(req.body.chapterNumber);
+
+  // Only chapter 3,4,5 are paid
+  if (![3, 4, 5].includes(chapterNumber)) {
+    return res.status(400).json({ error: "Invalid chapter number" });
+  }
+
+  // Premium / Creator → no lock
+  if (req.user.plan !== "free") {
+    return res.json({ ok: true, unlocked: true });
+  }
+
+  // 1️⃣ Get run & story
+  const runQ = await query(
+    `SELECT id, story_id FROM story_runs WHERE id=$1`,
+    [runId]
+  );
+
+  if (runQ.rows.length === 0) {
+    return res.status(404).json({ error: "Run not found" });
+  }
+
+  const storyId = runQ.rows[0].story_id;
+  const cost = 100;
+
+  // 2️⃣ Check already unlocked
+  const unlockedQ = await query(
+    `SELECT 1 FROM chapter_unlocks
+     WHERE user_id=$1 AND story_id=$2 AND chapter_number=$3`,
+    [userId, storyId, chapterNumber]
+  );
+
+  if (unlockedQ.rows.length > 0) {
+    return res.json({ ok: true, unlocked: true });
+  }
+
+  // 3️⃣ Check user coins
+  const userQ = await query(
+    `SELECT coins FROM users WHERE id=$1`,
+    [userId]
+  );
+
+  const availableCoins = Number(userQ.rows[0]?.coins ?? 0);
+
+  if (availableCoins < cost) {
+    return res.status(402).json({
+      error: "INSUFFICIENT_COINS",
+      available: availableCoins,
+      required: cost,
+    });
+  }
+
+  // ===============================
+  // 4️⃣ TRANSACTION STARTS HERE
+  // THIS IS THE CODE YOU ASKED ABOUT
+  // ===============================
+  await query("BEGIN");
+
+  try {
+    // Deduct coins
+    await query(
+      `UPDATE users SET coins = coins - $1 WHERE id=$2`,
+      [cost, userId]
+    );
+
+    // Log transaction
+    await query(
+      `INSERT INTO coin_transactions (user_id, type, coins, meta)
+       VALUES ($1, 'redeem', $2, $3::jsonb)`,
+      [
+        userId,
+        -cost,
+        JSON.stringify({
+          story_id: storyId,
+          chapter_number: chapterNumber,
+        }),
+      ]
+    );
+
+    // Save unlock
+    await query(
+      `INSERT INTO chapter_unlocks (user_id, story_id, chapter_number)
+       VALUES ($1, $2, $3)`,
+      [userId, storyId, chapterNumber]
+    );
+
+    await query("COMMIT");
+
+    return res.json({ ok: true, unlocked: true });
+  } catch (err) {
+    await query("ROLLBACK");
+    console.error("Unlock failed:", err);
+    return res.status(500).json({ error: "Unlock failed" });
   }
 });
 
@@ -354,6 +558,70 @@ router.get("/:runId/summary", requireAuth, async (req: AuthRequest, res: Respons
     console.error(err);
     return res.status(500).json({ error: "Internal server error" });
   }
+});
+// POST /api/runs/:runId/feedback  body: { rating?: number, feedback?: string }
+router.post("/:runId/feedback", requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  const runId = req.params.runId;
+  const rating = req.body.rating ? Number(req.body.rating) : null;
+  const feedback = req.body.feedback ? String(req.body.feedback).slice(0, 2000) : null;
+
+  const runQ = await query(
+    `SELECT id, story_id, is_completed
+     FROM story_runs
+     WHERE id=$1`,
+    [runId]
+  );
+
+  const run = runQ.rows?.[0];
+  if (!run) return res.status(404).json({ error: "Run not found" });
+
+  if (!run.is_completed) {
+    return res.status(400).json({ error: "Run not completed yet" });
+  }
+
+  await query(
+    `INSERT INTO run_feedback (run_id, user_id, story_id, rating, feedback)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (run_id, user_id)
+     DO UPDATE SET rating=EXCLUDED.rating, feedback=EXCLUDED.feedback`,
+    [runId, userId, run.story_id, rating, feedback]
+  );
+
+  res.json({ ok: true });
+});
+
+// ===============================
+// GET UNLOCKED CHAPTERS FOR RUN
+// ===============================
+router.get("/:runId/unlocks", requireAuth, async (req: AuthRequest, res) => {
+  const runId = req.params.runId;
+  const userId = req.user!.id;
+
+  // 1️⃣ Get story_id from run
+  const runQ = await query(
+    `SELECT story_id FROM story_runs WHERE id=$1 AND user_id=$2`,
+    [runId, userId]
+  );
+
+  if (!runQ.rows.length) {
+    return res.status(404).json({ error: "Run not found" });
+  }
+
+  const storyId = runQ.rows[0].story_id;
+
+  // 2️⃣ Fetch unlocked chapters for this story
+  const q = await query(
+    `SELECT chapter_number
+     FROM chapter_unlocks
+     WHERE user_id=$1 AND story_id=$2
+     ORDER BY chapter_number`,
+    [userId, storyId]
+  );
+
+  res.json({
+    unlockedChapters: q.rows.map((r) => Number(r.chapter_number)),
+  });
 });
 
 export default router;

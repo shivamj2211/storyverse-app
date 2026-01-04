@@ -4,7 +4,7 @@ const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
 
 export function api(path: string) {
-  const base = (API_URL || "").replace(/\/$/, "");
+  const base = (API_URL || BASE).replace(/\/$/, ""); // ✅ fallback to localhost:4000
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 

@@ -12,6 +12,7 @@ type Choice = {
 };
 
 type CurrentNodePayload = {
+  storyId?: string; // ✅ add
   node: {
     id: string;
     title: string;
@@ -61,12 +62,15 @@ export default function ReadRunPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [paywalled, setPaywalled] = useState<{
-    coins: number;
-    requiredCoins: number;
-    error: string;
-  } | null>(null);
+ const [paywalled, setPaywalled] = useState<{
+  chapterNumber: number;
+  available: number;
+  requiredCoins: number;
+  error: string;
+} | null>(null);
 
+
+ 
   const [me, setMe] = useState<MePayload["user"] | null>(null);
 
   const [current, setCurrent] = useState<CurrentNodePayload | null>(null);
@@ -88,6 +92,32 @@ export default function ReadRunPage() {
     // You can customize this if you have a public story URL.
     return window.location.origin + "/stories";
   }, []);
+
+   //feedback
+ const [fbRating, setFbRating] = useState<number>(0);
+  const [fbText, setFbText] = useState("");
+  const [fbSent, setFbSent] = useState(false);
+  const [fbErr, setFbErr] = useState("");
+  
+  async function submitFeedback() {
+  setFbErr("");
+  try {
+    const res = await fetch(api(`/api/runs/${runId}/feedback`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ rating: fbRating || null, feedback: fbText }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setFbErr(data?.error || "Failed to submit feedback");
+      return;
+    }
+    setFbSent(true);
+  } catch (e) {
+    console.error(e);
+    setFbErr("Network error");
+  }
+}
 
   async function fetchMe() {
     try {
@@ -120,15 +150,21 @@ export default function ReadRunPage() {
       headers: { ...authHeaders() },
     });
 
-    if (res.status === 402) {
-      const data = (await res.json()) as { error: string; requiredCoins: number; coins: number };
-      setPaywalled({
-        error: data.error ?? "Upgrade or earn coins to continue.",
-        requiredCoins: data.requiredCoins ?? 20,
-        coins: data.coins ?? 0,
-      });
-      return;
-    }
+    if (res.status === 403) {
+  const data = await res.json();
+
+  // Backend lock payload
+  if (data?.code === "CHAPTER_LOCKED") {
+    setPaywalled({
+      chapterNumber: Number(data.chapterNumber ?? 3),
+      requiredCoins: Number(data.requiredCoins ?? 100),
+      available: Number(data.available ?? 0),
+      error: `Chapter ${data.chapterNumber} is locked. Use coins to unlock or go Premium.`,
+    });
+    return;
+  }
+}
+
 
     if (!res.ok) {
       throw new Error("Failed to fetch current node");
@@ -140,18 +176,27 @@ export default function ReadRunPage() {
     setRating(null);
   }
 
-    async function unlockWithCoins() {
+   async function unlockWithCoins() {
+  if (!paywalled) return;
+
   try {
     const res = await fetch(api(`/api/runs/${runId}/unlock`), {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ chapterNumber: paywalled.chapterNumber }),
     });
 
     const text = await res.text();
     const data = text ? JSON.parse(text) : null;
 
     if (!res.ok) {
-      alert(data?.error || "Unlock failed");
+      if (data?.error === "INSUFFICIENT_COINS") {
+        alert(`Insufficient coins. Available: ${data.available}, Required: ${data.required}`);
+        // refresh wallet value shown
+        await fetchMe();
+      } else {
+        alert(data?.error || "Unlock failed");
+      }
       return;
     }
 
@@ -163,6 +208,7 @@ export default function ReadRunPage() {
     alert("Unlock failed due to network error");
   }
 }
+
 
   async function loadAll() {
     setLoading(true);
@@ -232,11 +278,31 @@ export default function ReadRunPage() {
       });
 
       if (!res.ok) {
-        const msg = await res.text();
-        console.error(msg);
-        alert("Could not proceed. Please try again.");
-        return;
-      }
+  // handle lock response
+  if (res.status === 403) {
+  const data = await res.json();
+
+  // ✅ always refresh wallet coins when locked UI shows
+  await fetchMe();
+
+  if (data?.code === "CHAPTER_LOCKED") {
+    setPaywalled({
+      chapterNumber: Number(data.chapterNumber ?? 3),
+      requiredCoins: Number(data.requiredCoins ?? 100),
+      available: Number(data.available ?? 0),
+      error: `Chapter ${data.chapterNumber} is locked. Use coins to unlock or go Premium.`,
+    });
+    return;
+  }
+}
+
+
+  const msg = await res.text();
+  console.error(msg);
+  alert("Could not proceed. Please try again.");
+  return;
+}
+
 
       const data = (await res.json()) as CurrentNodePayload;
       setCurrent(data);
@@ -329,7 +395,8 @@ if (paywalled) {
   return (
     <main className="parchment-wrap">
       <div className="parchment-shell-wide space-y-6">
-        <JourneyStepper totalSteps={5} currentStep={2} picked={[]} />
+        <JourneyStepper totalSteps={5} currentStep={paywalled.chapterNumber} picked={journey?.picked ?? []} />
+
 
         <section className="parchment-panel">
           <div className="parchment-kicker">Locked</div>
@@ -338,8 +405,9 @@ if (paywalled) {
 
           <div className="stat-grid">
             <div className="stat-card">
-              <div className="stat-label">Your Wallet Coins</div>
-              <div className="stat-value">{paywalled.coins}</div>
+              <div className="stat-label">Your Available Coins</div>
+            <div className="stat-value">{Number(me?.coins ?? paywalled.available ?? 0)}</div>
+
               <div className="stat-note">Coins are added when you rate chapters</div>
             </div>
 
@@ -360,7 +428,8 @@ if (paywalled) {
             <button
               className="btn-primary"
               onClick={unlockWithCoins}
-              disabled={paywalled.coins < paywalled.requiredCoins}
+              disabled={Number(me?.coins ?? paywalled.available ?? 0) < paywalled.requiredCoins}
+
             >
               Unlock with {paywalled.requiredCoins} coins
             </button>
@@ -395,7 +464,7 @@ if (paywalled) {
   // Congrats view
   // Congrats view (Parchment Premium UI)
 if (summary?.isCompleted) {
-  const unlockAt = 20;
+  const unlockAt = 100;
 
   return (
     <main className="parchment-wrap">
@@ -442,8 +511,9 @@ if (summary?.isCompleted) {
           <div className="callout-box">
             <div className="callout-title">Unlock tip</div>
             <div className="callout-text">
-              Free users can read only <b>2 chapters</b> per story.  
-              If your wallet coins are <b>≥ {unlockAt}</b>, you can continue reading <b>Chapter 3+</b> without Premium.
+              Free users can read <b>Chapters 1–2</b> for free.
+              Chapters <b>3–5</b> require <b>{unlockAt} coins each</b> to unlock (or go Premium).
+
             </div>
           </div>
 
@@ -465,7 +535,48 @@ if (summary?.isCompleted) {
             </button>
           </div>
 
+          
           <div className="hr-ink" />
+
+<section className="parchment-panel">
+  <div className="parchment-kicker">Feedback</div>
+  <h2 className="parchment-h1" style={{ fontSize: "1.2rem" }}>⭐ Rate this journey</h2>
+  <p className="parchment-sub">Your feedback helps us improve Storyverse.</p>
+
+  <div className="flex gap-2 mt-2">
+    {[1, 2, 3, 4, 5].map((n) => (
+      <button
+        key={n}
+        type="button"
+        className={`rating-pill ${fbRating >= n ? "rating-pill-selected" : ""}`}
+        onClick={() => setFbRating(n)}
+      >
+        {n}
+      </button>
+    ))}
+  </div>
+
+  <textarea
+    className="mt-3 w-full rounded-lg border border-slate-200 p-2 text-sm"
+    rows={3}
+    placeholder="What did you like? What should improve?"
+    value={fbText}
+    onChange={(e) => setFbText(e.target.value)}
+  />
+
+  {fbErr ? <div className="mt-2 text-sm text-red-600">{fbErr}</div> : null}
+  {fbSent ? <div className="mt-2 text-sm text-green-700">Thanks! Feedback saved.</div> : null}
+
+  <button
+    className="btn-primary mt-3"
+    onClick={submitFeedback}
+    disabled={fbSent}
+    type="button"
+  >
+    Submit Feedback
+  </button>
+</section>
+
 
           <div className="callout-box">
             <div className="callout-title">✍️ Write for Storyverse</div>
