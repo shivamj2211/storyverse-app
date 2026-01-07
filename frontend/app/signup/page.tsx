@@ -16,10 +16,14 @@ export default function SignupPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setErrorCode(null);
+
 
     if (!firstName.trim() || !lastName.trim()) {
       setError("Please enter your first and last name.");
@@ -49,7 +53,8 @@ export default function SignupPage() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Signup failed.");
+        setErrorCode(data.error || null);
+        setError(data.message || data.error || "Signup failed.");
         return;
       }
 
@@ -86,7 +91,35 @@ export default function SignupPage() {
             personalized story path.
           </p>
 
-          {error && <div className="mt-6 storyverse-error">{error}</div>}
+          {error && (
+  <div className="mt-6 storyverse-error">
+    <div>{error}</div>
+
+    {errorCode === "EMAIL_ALREADY_REGISTERED" && (
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={() => router.push("/login")}
+          className="rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+        >
+          Go to Login
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setErrorCode(null);
+          }}
+          className="rounded-lg border border-white/20 bg-transparent px-4 py-2 text-sm text-white/80 hover:bg-white/5"
+        >
+          Try another email
+        </button>
+      </div>
+    )}
+  </div>
+)}
+
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
             <div className="grid sm:grid-cols-2 gap-4">

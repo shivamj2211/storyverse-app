@@ -87,6 +87,17 @@ router.post("/signup", async (req: Request, res: Response) => {
       .parse(req.body);
 
     const fullName = `${body.first_name.trim()} ${body.last_name.trim()}`.trim();
+        // ✅ if email already exists, return 400 with a clear code
+    const emailNorm = body.email.trim().toLowerCase();
+    const exists = await query(`SELECT id FROM users WHERE email = $1 LIMIT 1`, [emailNorm]);
+
+    if (exists.rows.length) {
+      return res.status(400).json({
+        error: "EMAIL_ALREADY_REGISTERED",
+        message: "Email already registered. Please log in.",
+      });
+    }
+
     const passwordHash = await bcrypt.hash(body.password, 10);
 
     const insertRes = await query(
@@ -94,12 +105,13 @@ router.post("/signup", async (req: Request, res: Response) => {
        VALUES ($1, $2, $3, $4, $5, FALSE)
        RETURNING id, email, phone, full_name, age, coins, plan, is_admin, is_premium, is_email_verified, email_verified_at`,
       [
-        body.email.trim().toLowerCase(),
+        emailNorm,
         body.phone?.trim() || null,
         passwordHash,
         fullName,
         body.age ?? null,
       ]
+
     );
 
     const user = insertRes.rows[0];
@@ -162,7 +174,7 @@ router.post("/signup", async (req: Request, res: Response) => {
       },
       message: "Signup successful. Please verify your email.",
     });
-  } catch (err: any) {
+ } catch (err: any) {
   console.error("Signup failed:", err?.message || err);
   if (err?.stack) console.error(err.stack);
 
