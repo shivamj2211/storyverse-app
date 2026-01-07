@@ -26,11 +26,8 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 
-// ✅ Logger (ok)
-app.use((req, _res, next) => {
-  console.log("🌐 REQ:", req.method, req.path);
-  next();
-});
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
 
 // 🔴 Stripe webhook MUST be before express.json()
 app.use("/api/premium/webhook", bodyParser.raw({ type: "application/json" }));
@@ -42,6 +39,7 @@ const allowedOrigins = [
   "http://127.0.0.1:3000",
   "http://localhost:3001",
   "http://127.0.0.1:3001",
+  "https://storyverrse.asumatech.com", 
   "https://storyverse-surkashi-kerhffc7q-shivam-jaiswals-projects-49ca0bd9.vercel.app",
 ];
 

@@ -105,15 +105,25 @@ router.post("/signup", async (req: Request, res: Response) => {
     const user = insertRes.rows[0];
 
     // ✅ SIGNUP BONUS (ADMIN-CONTROLLED)
-    await creditCoinsIfEligible({
-      userId: user.id,
-      ruleKey: "signup",
-      reason: "signup",
-      meta: {},
-    });
+    // ✅ signup bonus (non-blocking for local/dev)
+      try {
+        await creditCoinsIfEligible({
+          userId: user.id,
+          ruleKey: "signup",
+          reason: "signup",
+          meta: {},
+        });
+      } catch (e) {
+        console.error("Signup bonus failed (non-blocking):", e);
+      }
 
-    // ✅ Send verification email (does NOT block signup if it fails — but here we choose to fail loudly)
-    await issueEmailVerification(user.id, user.email);
+      // ✅ email verify (non-blocking for dev)
+      try {
+        await issueEmailVerification(user.id, user.email);
+      } catch (e) {
+        console.error("Email verification failed (non-blocking):", e);
+      }
+
 
     // Re-fetch coins after bonus (so UI gets updated coins)
     const refreshed = await query(
@@ -152,13 +162,16 @@ router.post("/signup", async (req: Request, res: Response) => {
       },
       message: "Signup successful. Please verify your email.",
     });
-  } catch (err) {
-    console.error("Signup failed:", err);
-    return res.status(500).json({
-      error:
-        "Signup failed. Check DATABASE_URL, Postgres running, schema applied, and email sender env vars.",
-    });
-  }
+  } catch (err: any) {
+  console.error("Signup failed:", err?.message || err);
+  if (err?.stack) console.error(err.stack);
+
+  return res.status(500).json({
+    error: "Signup failed",
+    detail: err?.message || String(err),
+  });
+}
+
 });
 
 // ✅ LOGIN
@@ -436,7 +449,8 @@ router.patch("/me/email", requireAuth, async (req: AuthRequest, res: Response) =
 
     // after email change, require verification again
           try {
-        await issueEmailVerification(user.id, user.email);
+        await issueEmailVerification(user.id, emailNorm); // ✅ new email
+
       } catch (e) {
         console.error("Email verification send failed (non-blocking):", e);
       }
