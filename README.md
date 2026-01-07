@@ -196,3 +196,7 @@ DATABASE_URL="postgresql://postgres.kpmjntywllxvhesgwdui:Shivam%402211@aws-1-ap-
 
 postgress
 DATABASE_URL=postgresql://postgres:12345@localhost:5432/storyverse
+
+
+backend 
+NEXT_PUBLIC_API_URL= https://storyverse-app-backend.onrender.com

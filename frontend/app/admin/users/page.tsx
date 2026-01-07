@@ -363,7 +363,7 @@ export default function AdminUsersPage() {
           ) : filtered.length === 0 ? (
             <div className="p-4 text-sm text-gray-600">No users found.</div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="w-full overflow-x-auto -mx-2 px-2">
               <table className="min-w-[980px] w-full text-sm">
                 <thead className="bg-gray-50 text-gray-700">
                   <tr className="text-left">

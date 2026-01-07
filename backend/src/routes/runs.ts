@@ -210,15 +210,15 @@ const nextNodeRes = await query(
   [toNodeId]
 );
 const nextStepNo = Number(nextNodeRes.rows?.[0]?.step_no ?? 0);
-if (String(req.user?.plan || "").toLowerCase() === "free" && nextStepNo >= 3) {
-  console.log("🔒 FORCED LOCK TRIGGERED", { nextStepNo });
-  return res.status(403).json({
-    code: "CHAPTER_LOCKED",
-    chapterNumber: nextStepNo,
-    requiredCoins: 100,
-    available: Number(req.user?.coins ?? 0),
-  });
-}
+// if (String(req.user?.plan || "").toLowerCase() === "free" && nextStepNo >= 3) {
+//   console.log("🔒 FORCED LOCK TRIGGERED", { nextStepNo });
+//   return res.status(403).json({
+//     code: "CHAPTER_LOCKED",
+//     chapterNumber: nextStepNo,
+//     requiredCoins: 100,
+//     available: Number(req.user?.coins ?? 0),
+//   });
+// }
 
 // Get storyId for unlock check
 const storyRes = await query(
@@ -294,10 +294,10 @@ router.post("/:runId/unlock", requireAuth, async (req, res) => {
     return res.json({ ok: true, unlocked: true });
   }
 
-  // 1️⃣ Get run & story
+  // 1️⃣ Get run & story (SECURITY: ensure run belongs to this user)
   const runQ = await query(
-    `SELECT id, story_id FROM story_runs WHERE id=$1`,
-    [runId]
+    `SELECT id, story_id FROM story_runs WHERE id=$1 AND user_id=$2`,
+    [runId, userId]
   );
 
   if (runQ.rows.length === 0) {
@@ -307,47 +307,60 @@ router.post("/:runId/unlock", requireAuth, async (req, res) => {
   const storyId = runQ.rows[0].story_id;
   const cost = 100;
 
-  // 2️⃣ Check already unlocked
-  const unlockedQ = await query(
-    `SELECT 1 FROM chapter_unlocks
-     WHERE user_id=$1 AND story_id=$2 AND chapter_number=$3`,
-    [userId, storyId, chapterNumber]
-  );
-
-  if (unlockedQ.rows.length > 0) {
-    return res.json({ ok: true, unlocked: true });
-  }
-
-  // 3️⃣ Check user coins
-  const userQ = await query(
-    `SELECT coins FROM users WHERE id=$1`,
-    [userId]
-  );
-
-  const availableCoins = Number(userQ.rows[0]?.coins ?? 0);
-
-  if (availableCoins < cost) {
-    return res.status(402).json({
-      error: "INSUFFICIENT_COINS",
-      available: availableCoins,
-      required: cost,
-    });
-  }
-
   // ===============================
   // 4️⃣ TRANSACTION STARTS HERE
-  // THIS IS THE CODE YOU ASKED ABOUT
   // ===============================
   await query("BEGIN");
 
   try {
+    // 2️⃣ Check already unlocked (IDEMPOTENT) — inside transaction
+    const unlockedQ = await query(
+      `SELECT 1 FROM chapter_unlocks
+       WHERE user_id=$1 AND story_id=$2 AND chapter_number=$3
+       LIMIT 1`,
+      [userId, storyId, chapterNumber]
+    );
+
+    if (unlockedQ.rows.length > 0) {
+      // already unlocked → don't charge again
+      await query("COMMIT");
+      return res.json({ ok: true, unlocked: true, alreadyUnlocked: true });
+    }
+
+    // 3️⃣ Check user coins safely (LOCK ROW so double-click can't double spend)
+    const userQ = await query(
+      `SELECT coins FROM users WHERE id=$1 FOR UPDATE`,
+      [userId]
+    );
+
+    const availableCoins = Number(userQ.rows[0]?.coins ?? 0);
+
+    if (availableCoins < cost) {
+      await query("ROLLBACK");
+      return res.status(402).json({
+        error: "INSUFFICIENT_COINS",
+        available: availableCoins,
+        required: cost,
+      });
+    }
+
+    const remainingCoins = availableCoins - cost;
+
     // Deduct coins
     await query(
-      `UPDATE users SET coins = coins - $1 WHERE id=$2`,
-      [cost, userId]
+      `UPDATE users SET coins = $1 WHERE id=$2`,
+      [remainingCoins, userId]
+    );
+
+    // Save unlock (permanent for that story + chapter)
+    await query(
+      `INSERT INTO chapter_unlocks (user_id, story_id, chapter_number)
+       VALUES ($1, $2, $3)`,
+      [userId, storyId, chapterNumber]
     );
 
     // Log transaction
+    // ✅ meta keys aligned with wallet UI + future debugging
     await query(
       `INSERT INTO coin_transactions (user_id, type, coins, meta)
        VALUES ($1, 'redeem', $2, $3::jsonb)`,
@@ -357,26 +370,28 @@ router.post("/:runId/unlock", requireAuth, async (req, res) => {
         JSON.stringify({
           story_id: storyId,
           chapter_number: chapterNumber,
+          note: `Unlocked Chapter ${chapterNumber}`,
         }),
       ]
     );
 
-    // Save unlock
-    await query(
-      `INSERT INTO chapter_unlocks (user_id, story_id, chapter_number)
-       VALUES ($1, $2, $3)`,
-      [userId, storyId, chapterNumber]
-    );
-
     await query("COMMIT");
 
-    return res.json({ ok: true, unlocked: true });
+    return res.json({
+      ok: true,
+      unlocked: true,
+      remainingCoins,
+      spent: cost,
+      storyId,
+      chapterNumber,
+    });
   } catch (err) {
     await query("ROLLBACK");
     console.error("Unlock failed:", err);
     return res.status(500).json({ error: "Unlock failed" });
   }
 });
+
 
 // POST /api/runs/:runId/rate
 // Submit a rating for the current node (genre)

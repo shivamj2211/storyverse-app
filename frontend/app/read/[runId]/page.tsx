@@ -12,7 +12,7 @@ type Choice = {
 };
 
 type CurrentNodePayload = {
-  storyId?: string; // ✅ add
+  storyId?: string;
   node: {
     id: string;
     title: string;
@@ -62,15 +62,14 @@ export default function ReadRunPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
- const [paywalled, setPaywalled] = useState<{
-  chapterNumber: number;
-  available: number;
-  requiredCoins: number;
-  error: string;
-} | null>(null);
 
+  const [paywalled, setPaywalled] = useState<{
+    chapterNumber: number;
+    available: number;
+    requiredCoins: number;
+    error: string;
+  } | null>(null);
 
- 
   const [me, setMe] = useState<MePayload["user"] | null>(null);
 
   const [current, setCurrent] = useState<CurrentNodePayload | null>(null);
@@ -89,40 +88,40 @@ export default function ReadRunPage() {
 
   const shareUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
-    // You can customize this if you have a public story URL.
     return window.location.origin + "/stories";
   }, []);
 
-   //feedback
- const [fbRating, setFbRating] = useState<number>(0);
+  // feedback
+  const [fbRating, setFbRating] = useState<number>(0);
   const [fbText, setFbText] = useState("");
   const [fbSent, setFbSent] = useState(false);
   const [fbErr, setFbErr] = useState("");
-  
+
   async function submitFeedback() {
-  setFbErr("");
-  try {
-    const res = await fetch(api(`/api/runs/${runId}/feedback`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ rating: fbRating || null, feedback: fbText }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setFbErr(data?.error || "Failed to submit feedback");
-      return;
+    setFbErr("");
+    try {
+      const res = await fetch(api(`/api/runs/${runId}/feedback`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ rating: fbRating || null, feedback: fbText }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFbErr(data?.error || "Failed to submit feedback");
+        return;
+      }
+      setFbSent(true);
+    } catch (e) {
+      console.error(e);
+      setFbErr("Network error");
     }
-    setFbSent(true);
-  } catch (e) {
-    console.error(e);
-    setFbErr("Network error");
   }
-}
 
   async function fetchMe() {
     try {
       const res = await fetch(api("/api/auth/me"), {
         headers: { ...authHeaders() },
+        cache: "no-store",
       });
       if (!res.ok) return;
       const data = (await res.json()) as MePayload;
@@ -135,6 +134,7 @@ export default function ReadRunPage() {
   async function fetchJourney() {
     const res = await fetch(api(`/api/runs/${runId}/journey`), {
       headers: { ...authHeaders() },
+      cache: "no-store",
     });
     if (!res.ok) throw new Error("Failed to fetch journey");
     const data = (await res.json()) as JourneyPayload;
@@ -142,29 +142,30 @@ export default function ReadRunPage() {
   }
 
   async function fetchCurrent() {
-    // reset paywall and summary view
     setPaywalled(null);
     setSummary(null);
 
     const res = await fetch(api(`/api/runs/${runId}/current`), {
       headers: { ...authHeaders() },
+      cache: "no-store",
     });
 
     if (res.status === 403) {
-  const data = await res.json();
+      const data = await res.json();
 
-  // Backend lock payload
-  if (data?.code === "CHAPTER_LOCKED") {
-    setPaywalled({
-      chapterNumber: Number(data.chapterNumber ?? 3),
-      requiredCoins: Number(data.requiredCoins ?? 100),
-      available: Number(data.available ?? 0),
-      error: `Chapter ${data.chapterNumber} is locked. Use coins to unlock or go Premium.`,
-    });
-    return;
-  }
-}
+      if (data?.code === "CHAPTER_LOCKED") {
+        // ✅ Always refresh /me so coin UI is accurate
+        await fetchMe();
 
+        setPaywalled({
+          chapterNumber: Number(data.chapterNumber ?? 3),
+          requiredCoins: Number(data.requiredCoins ?? 100),
+          available: Number(data.available ?? 0),
+          error: `Chapter ${data.chapterNumber} is locked. Use coins to unlock or go Premium.`,
+        });
+        return;
+      }
+    }
 
     if (!res.ok) {
       throw new Error("Failed to fetch current node");
@@ -176,39 +177,46 @@ export default function ReadRunPage() {
     setRating(null);
   }
 
-   async function unlockWithCoins() {
-  if (!paywalled) return;
+  async function unlockWithCoins() {
+    if (!paywalled) return;
 
-  try {
-    const res = await fetch(api(`/api/runs/${runId}/unlock`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ chapterNumber: paywalled.chapterNumber }),
-    });
+    const chapter = paywalled.chapterNumber;
 
-    const text = await res.text();
-    const data = text ? JSON.parse(text) : null;
+    try {
+      const res = await fetch(api(`/api/runs/${runId}/unlock`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ chapterNumber: chapter }),
+      });
 
-    if (!res.ok) {
-      if (data?.error === "INSUFFICIENT_COINS") {
-        alert(`Insufficient coins. Available: ${data.available}, Required: ${data.required}`);
-        // refresh wallet value shown
-        await fetchMe();
-      } else {
-        alert(data?.error || "Unlock failed");
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+
+      if (!res.ok) {
+        if (data?.error === "INSUFFICIENT_COINS") {
+          alert(`Insufficient coins. Available: ${data.available}, Required: ${data.required}`);
+          await fetchMe();
+          setPaywalled((p) =>
+            p ? { ...p, available: Number(data.available ?? p.available) } : p
+          );
+        } else {
+          alert(data?.error || "Unlock failed");
+        }
+        return;
       }
-      return;
+
+      // ✅ refresh coins + journey
+      await fetchMe();
+      await fetchJourney();
+
+      // ✅ Important: clear paywall then fetch current node again
+      setPaywalled(null);
+      await fetchCurrent();
+    } catch (e) {
+      console.error(e);
+      alert("Unlock failed due to network error");
     }
-
-    await fetchMe();
-    await fetchJourney();
-    await fetchCurrent();
-  } catch (e) {
-    console.error(e);
-    alert("Unlock failed due to network error");
   }
-}
-
 
   async function loadAll() {
     setLoading(true);
@@ -242,18 +250,16 @@ export default function ReadRunPage() {
       });
 
       if (!res.ok) {
-  const msg = await res.text();
-  console.error("FINISH ERROR:", msg);
-  alert(msg || "Finish failed. Please try again.");
-  return;
-}
-
+        const msg = await res.text();
+        console.error("RATE ERROR:", msg);
+        alert(msg || "Rating failed. Please try again.");
+        return;
+      }
 
       const data = (await res.json()) as { ok: boolean; coinsAwarded?: number };
       setRatingSubmitted(true);
       setCoinsAwardedLast(data.coinsAwarded ?? 0);
 
-      // refresh coins for UI
       await fetchMe();
     } catch (e) {
       console.error(e);
@@ -264,7 +270,6 @@ export default function ReadRunPage() {
   async function chooseGenre(genreKey: string) {
     if (!current) return;
 
-    // rating required for non-start nodes
     if (!ratingSubmitted && !current.node.isStart) {
       alert("Please rate before choosing.");
       return;
@@ -278,31 +283,26 @@ export default function ReadRunPage() {
       });
 
       if (!res.ok) {
-  // handle lock response
-  if (res.status === 403) {
-  const data = await res.json();
+        if (res.status === 403) {
+          const data = await res.json();
+          await fetchMe();
 
-  // ✅ always refresh wallet coins when locked UI shows
-  await fetchMe();
+          if (data?.code === "CHAPTER_LOCKED") {
+            setPaywalled({
+              chapterNumber: Number(data.chapterNumber ?? 3),
+              requiredCoins: Number(data.requiredCoins ?? 100),
+              available: Number(data.available ?? 0),
+              error: `Chapter ${data.chapterNumber} is locked. Use coins to unlock or go Premium.`,
+            });
+            return;
+          }
+        }
 
-  if (data?.code === "CHAPTER_LOCKED") {
-    setPaywalled({
-      chapterNumber: Number(data.chapterNumber ?? 3),
-      requiredCoins: Number(data.requiredCoins ?? 100),
-      available: Number(data.available ?? 0),
-      error: `Chapter ${data.chapterNumber} is locked. Use coins to unlock or go Premium.`,
-    });
-    return;
-  }
-}
-
-
-  const msg = await res.text();
-  console.error(msg);
-  alert("Could not proceed. Please try again.");
-  return;
-}
-
+        const msg = await res.text();
+        console.error(msg);
+        alert("Could not proceed. Please try again.");
+        return;
+      }
 
       const data = (await res.json()) as CurrentNodePayload;
       setCurrent(data);
@@ -321,7 +321,6 @@ export default function ReadRunPage() {
     if (!current) return;
     if (current.node.stepNo < 5) return;
 
-    // Must rate final chapter too
     if (!ratingSubmitted) {
       alert("Please rate the final chapter before finishing.");
       return;
@@ -360,13 +359,12 @@ export default function ReadRunPage() {
   async function handleShare() {
     const text = "I’m reading a Storyverse journey. Check it out!";
     try {
-      // Native share if supported
       if (navigator.share) {
         await navigator.share({ title: "Storyverse", text, url: shareUrl });
         return;
       }
     } catch {
-      // ignore and fall back
+      // ignore
     }
 
     window.open(WhatsAppShareLink(text, shareUrl), "_blank", "noopener,noreferrer");
@@ -390,366 +388,307 @@ export default function ReadRunPage() {
   }
 
   // Paywall view
-  // Paywall view (Parchment)
-if (paywalled) {
-  return (
-    <main className="parchment-wrap">
-      <div className="parchment-shell-wide space-y-6">
-        <JourneyStepper totalSteps={5} currentStep={paywalled.chapterNumber} picked={journey?.picked ?? []} />
+  if (paywalled) {
+    const shownCoins = Number.isFinite(Number(me?.coins))
+      ? Number(me?.coins)
+      : Number(paywalled.available ?? 0);
 
+    return (
+      <main className="parchment-wrap">
+        <div className="parchment-shell-wide space-y-6">
+          <JourneyStepper totalSteps={5} currentStep={paywalled.chapterNumber} picked={journey?.picked ?? []} />
 
-        <section className="parchment-panel">
-          <div className="parchment-kicker">Locked</div>
-          <h1 className="parchment-h1">🔒 Locked Chapter</h1>
-          <p className="parchment-sub">{paywalled.error}</p>
+          <section className="parchment-panel">
+            <div className="parchment-kicker">Locked</div>
+            <h1 className="parchment-h1">🔒 Locked Chapter</h1>
+            <p className="parchment-sub">{paywalled.error}</p>
 
-          <div className="stat-grid">
-            <div className="stat-card">
-              <div className="stat-label">Your Available Coins</div>
-            <div className="stat-value">{Number(me?.coins ?? paywalled.available ?? 0)}</div>
+            <div className="stat-grid">
+              <div className="stat-card">
+                <div className="stat-label">Your Available Coins</div>
+                <div className="stat-value">{shownCoins}</div>
+                <div className="stat-note">Coins are added when you rate chapters</div>
+              </div>
 
-              <div className="stat-note">Coins are added when you rate chapters</div>
+              <div className="stat-card">
+                <div className="stat-label">Required to Unlock</div>
+                <div className="stat-value">{paywalled.requiredCoins}</div>
+                <div className="stat-note">Unlock Chapter 3+ without Premium</div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-label">Tip</div>
+                <div className="stat-value">Rate</div>
+                <div className="stat-note">Earn coins by rating each chapter</div>
+              </div>
             </div>
 
-            <div className="stat-card">
-              <div className="stat-label">Required to Unlock</div>
-              <div className="stat-value">{paywalled.requiredCoins}</div>
-              <div className="stat-note">Unlock Chapter 3+ without Premium</div>
+            <div className="primary-actions">
+              <button
+                className="btn-primary"
+                onClick={unlockWithCoins}
+                disabled={shownCoins < paywalled.requiredCoins}
+                type="button"
+              >
+                Unlock with {paywalled.requiredCoins} coins
+              </button>
+
+              <button className="btn-primary" onClick={() => router.push("/premium")} type="button">
+                Go Premium
+              </button>
+
+              <button className="btn-ghost" onClick={() => router.push("/wallet")} type="button">
+                View Wallet
+              </button>
+
+              <button className="btn-ghost" onClick={() => router.push("/stories")} type="button">
+                Back to Stories
+              </button>
             </div>
 
-            <div className="stat-card">
-              <div className="stat-label">Tip</div>
-              <div className="stat-value">Rate</div>
-              <div className="stat-note">Earn coins by rating each chapter</div>
+            <div className="wallet-tip">
+              <div className="callout-title">Fast unlock</div>
+              <div className="callout-text">
+                Rate stories → coins go to your wallet → when wallet coins are{" "}
+                <b>≥ {paywalled.requiredCoins}</b>, you can read Chapter 3+ on Free plan.
+              </div>
             </div>
-          </div>
-
-          <div className="primary-actions">
-            <button
-              className="btn-primary"
-              onClick={unlockWithCoins}
-              disabled={Number(me?.coins ?? paywalled.available ?? 0) < paywalled.requiredCoins}
-
-            >
-              Unlock with {paywalled.requiredCoins} coins
-            </button>
-
-            <button className="btn-primary" onClick={() => router.push("/premium")}>
-              Go Premium
-            </button>
-
-            <button className="btn-ghost" onClick={() => router.push("/wallet")}>
-              View Wallet
-            </button>
-
-            <button className="btn-ghost" onClick={() => router.push("/stories")}>
-              Back to Stories
-            </button>
-          </div>
-
-          <div className="wallet-tip">
-            <div className="callout-title">Fast unlock</div>
-            <div className="callout-text">
-              Rate stories → coins go to your wallet → when wallet coins are{" "}
-              <b>≥ {paywalled.requiredCoins}</b>, you can read Chapter 3+ on Free plan.
-            </div>
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   // Congrats view
-  // Congrats view (Parchment Premium UI)
-if (summary?.isCompleted) {
-  const unlockAt = 100;
+  if (summary?.isCompleted) {
+    const unlockAt = 100;
 
+    return (
+      <main className="parchment-wrap">
+        <div className="parchment-shell-wide space-y-6">
+          <JourneyStepper totalSteps={summary.totalSteps ?? 5} currentStep={5} picked={journey?.picked ?? []} />
+
+          <section className="parchment-panel">
+            <div className="parchment-kicker">Journey Completed</div>
+            <h1 className="parchment-h1">🎉 Congratulations!</h1>
+            <p className="parchment-sub">
+              You finished all <b>5 steps</b>. Your final journey rating is the average of your chapter ratings.
+              <br />
+              Any coins you earned are now added to your <b>wallet</b>.
+            </p>
+
+            <div className="stat-grid">
+              <div className="stat-card">
+                <div className="stat-label">Final Journey Rating</div>
+                <div className="stat-value">{summary.finalJourneyRating ?? "—"}</div>
+                <div className="stat-note">Based on your ratings for this run</div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-label">Wallet Coins</div>
+                <div className="stat-value">{me?.coins ?? "—"}</div>
+                <div className="stat-note">
+                  Unlock Chapter 3+ at <b>{unlockAt} coins</b> (Free plan)
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-label">Plan</div>
+                <div className="stat-value">{me?.plan?.toUpperCase?.() ?? "FREE"}</div>
+                <div className="stat-note">Premium removes limits • Creator includes Premium</div>
+              </div>
+            </div>
+
+            <div className="callout-box">
+              <div className="callout-title">Unlock tip</div>
+              <div className="callout-text">
+                Free users can read <b>Chapters 1–2</b> for free. Chapters <b>3–5</b> require{" "}
+                <b>{unlockAt} coins each</b> to unlock (or go Premium).
+              </div>
+            </div>
+
+            <div className="primary-actions">
+              <button className="btn-primary" onClick={handleShare} type="button">
+                Share Journey
+              </button>
+
+              <button className="btn-ghost" onClick={copyLink} type="button">
+                Copy Link
+              </button>
+
+              <button className="btn-ghost" onClick={() => router.push("/stories")} type="button">
+                Back to Stories
+              </button>
+
+              <button className="btn-ghost" onClick={() => router.push("/runs")} type="button">
+                Go to Library
+              </button>
+            </div>
+
+            <div className="hr-ink" />
+
+            <section className="parchment-panel">
+              <div className="parchment-kicker">Feedback</div>
+              <h2 className="parchment-h1" style={{ fontSize: "1.2rem" }}>
+                ⭐ Rate this journey
+              </h2>
+              <p className="parchment-sub">Your feedback helps us improve Storyverse.</p>
+
+              <div className="flex gap-2 mt-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`rating-pill ${fbRating >= n ? "rating-pill-selected" : ""}`}
+                    onClick={() => setFbRating(n)}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+
+              <textarea
+                className="mt-3 w-full rounded-lg border border-slate-200 p-2 text-sm"
+                rows={3}
+                placeholder="What did you like? What should improve?"
+                value={fbText}
+                onChange={(e) => setFbText(e.target.value)}
+              />
+
+              {fbErr ? <div className="mt-2 text-sm text-red-600">{fbErr}</div> : null}
+              {fbSent ? <div className="mt-2 text-sm text-green-700">Thanks! Feedback saved.</div> : null}
+
+              <button className="btn-primary mt-3" onClick={submitFeedback} disabled={fbSent} type="button">
+                Submit Feedback
+              </button>
+            </section>
+
+            <div className="callout-box">
+              <div className="callout-title">✍️ Write for Storyverse</div>
+              <div className="callout-text">
+                If you write stories, email us at <b>writers@storyverse.com</b>. We review submissions, publish
+                selected stories, and pay you based on story performance. We only take a commission from earnings.
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  // Normal reading view
   return (
-    <main className="parchment-wrap">
-      <div className="parchment-shell-wide space-y-6">
-        <JourneyStepper
-          totalSteps={summary.totalSteps ?? 5}
-          currentStep={5}
-          picked={journey?.picked ?? []}
-        />
+    <main className="reading-page">
+      <div className="reading-shell space-y-6">
+        <JourneyStepper totalSteps={totalSteps} currentStep={currentStep} picked={journey?.picked ?? []} />
 
-        <section className="parchment-panel">
-          <div className="parchment-kicker">Journey Completed</div>
-          <h1 className="parchment-h1">🎉 Congratulations!</h1>
-          <p className="parchment-sub">
-            You finished all <b>5 steps</b>. Your final journey rating is the average of your chapter ratings.
-            <br />
-            Any coins you earned are now added to your <b>wallet</b>.
-          </p>
-
-          <div className="stat-grid">
-            <div className="stat-card">
-              <div className="stat-label">Final Journey Rating</div>
-              <div className="stat-value">{summary.finalJourneyRating ?? "—"}</div>
-              <div className="stat-note">Based on your ratings for this run</div>
+        <article className="reading-card">
+          <header>
+            <h1 className="reading-title">{current?.node.title ?? "Chapter"}</h1>
+            <div className="reading-meta">
+              Chapter {current?.node.stepNo ?? "—"} of {totalSteps} · Coins <b>{me?.coins ?? "—"}</b>{" "}
+              <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                {me?.plan?.toUpperCase?.() ?? "FREE"}
+              </span>
             </div>
+          </header>
 
-            <div className="stat-card">
-              <div className="stat-label">Wallet Coins</div>
-              <div className="stat-value">{me?.coins ?? "—"}</div>
-              <div className="stat-note">
-                Unlock Chapter 3+ at <b>{unlockAt} coins</b> (Free plan)
+          <section className="reading-content">{current?.node.content ?? ""}</section>
+
+          <div className="reading-divider" />
+
+          {/* ✅ Rating section (hidden for first chapter) */}
+          {!current?.node.isStart && (
+            <section className="reading-section rating-box rating-glow">
+              <div className="rating-header">
+                <div>
+                  <div className="text-base font-extrabold text-slate-900">Leave your mark</div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    Required before choosing the next genre.
+                  </div>
+                </div>
+
+                {ratingSubmitted ? (
+                  <span className="rating-stamp">
+                    ✓ Rated
+                    {coinsAwardedLast ? (
+                      <span>
+                        • <b>+{coinsAwardedLast}</b> coins
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span className="story-chip">RATE 1–5</span>
+                )}
               </div>
-            </div>
 
-            <div className="stat-card">
-              <div className="stat-label">Plan</div>
-              <div className="stat-value">{me?.plan?.toUpperCase?.() ?? "FREE"}</div>
-              <div className="stat-note">
-                Premium removes limits • Creator includes Premium
+              <div className="rating-scale">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    className={`rating-pill ${rating === n ? "rating-pill-selected" : ""}`}
+                    onClick={() => setRating(n)}
+                    type="button"
+                    aria-pressed={rating === n}
+                  >
+                    {n}
+                  </button>
+                ))}
+
+                <button
+                  className="rating-submit"
+                  onClick={submitRating}
+                  disabled={ratingSubmitted}
+                  type="button"
+                >
+                  {ratingSubmitted ? "Submitted" : "Submit Rating"}
+                </button>
               </div>
-            </div>
-          </div>
 
-          <div className="callout-box">
-            <div className="callout-title">Unlock tip</div>
-            <div className="callout-text">
-              Free users can read <b>Chapters 1–2</b> for free.
-              Chapters <b>3–5</b> require <b>{unlockAt} coins each</b> to unlock (or go Premium).
-
-            </div>
-          </div>
-
-          <div className="primary-actions">
-            <button className="btn-primary" onClick={handleShare}>
-              Share Journey
-            </button>
-
-            <button className="btn-ghost" onClick={copyLink}>
-              Copy Link
-            </button>
-
-            <button className="btn-ghost" onClick={() => router.push("/stories")}>
-              Back to Stories
-            </button>
-
-            <button className="btn-ghost" onClick={() => router.push("/runs")}>
-              Go to Library
-            </button>
-          </div>
-
-          
-          <div className="hr-ink" />
-
-<section className="parchment-panel">
-  <div className="parchment-kicker">Feedback</div>
-  <h2 className="parchment-h1" style={{ fontSize: "1.2rem" }}>⭐ Rate this journey</h2>
-  <p className="parchment-sub">Your feedback helps us improve Storyverse.</p>
-
-  <div className="flex gap-2 mt-2">
-    {[1, 2, 3, 4, 5].map((n) => (
-      <button
-        key={n}
-        type="button"
-        className={`rating-pill ${fbRating >= n ? "rating-pill-selected" : ""}`}
-        onClick={() => setFbRating(n)}
-      >
-        {n}
-      </button>
-    ))}
-  </div>
-
-  <textarea
-    className="mt-3 w-full rounded-lg border border-slate-200 p-2 text-sm"
-    rows={3}
-    placeholder="What did you like? What should improve?"
-    value={fbText}
-    onChange={(e) => setFbText(e.target.value)}
-  />
-
-  {fbErr ? <div className="mt-2 text-sm text-red-600">{fbErr}</div> : null}
-  {fbSent ? <div className="mt-2 text-sm text-green-700">Thanks! Feedback saved.</div> : null}
-
-  <button
-    className="btn-primary mt-3"
-    onClick={submitFeedback}
-    disabled={fbSent}
-    type="button"
-  >
-    Submit Feedback
-  </button>
-</section>
+              {!ratingSubmitted && (
+                <div className="rating-helper">
+                  Note: Rating is required before you can continue.
+                </div>
+              )}
+            </section>
+          )}
 
 
-          <div className="callout-box">
-            <div className="callout-title">✍️ Write for Storyverse</div>
-            <div className="callout-text">
-              If you write stories, email us at{" "}
-              <b>writers@storyverse.com</b>.  
-              We review submissions, publish selected stories, and pay you based on story performance.
-              We only take a commission from earnings.
-            </div>
-          </div>
-        </section>
+          <div className="reading-divider" />
+
+          <section className="reading-section">
+            {current?.node.stepNo === 5 ? (
+              <div className="rating-box">
+                <h2 className="text-lg font-bold text-slate-900">Final Chapter</h2>
+                <p className="mt-1 text-slate-600">Rate this chapter and finish your journey.</p>
+
+                <button className="mt-5 btn-wax" onClick={finishJourney} disabled={finishing} type="button">
+                  {finishing ? "Finishing…" : "Finish Journey"}
+                </button>
+              </div>
+            ) : (
+              <div className="reading-section">
+                <div>
+                  <div className="genre-section-title">Choose the path of the story</div>
+                  <div className="genre-section-sub">This decision will permanently shape your journey.</div>
+                </div>
+
+                <div className="genre-grid">
+                  {(current?.choices ?? []).map((c) => (
+                    <button key={c.genreKey} className="genre-card text-left" onClick={() => chooseGenre(c.genreKey)} type="button">
+                      <div className="genre-name">{c.genreKey}</div>
+                      <div className="genre-rating">
+                        Avg reader rating: <b>{c.avgRating ?? "—"}</b>
+                      </div>
+                      <div className="genre-arrow">→</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        </article>
       </div>
     </main>
   );
-}
-
-
-  // Normal reading view
- // Normal reading view (BOOK UI)
-return (
-  <main className="reading-page">
-    <div className="reading-shell space-y-6">
-      <JourneyStepper
-        totalSteps={totalSteps}
-        currentStep={currentStep}
-        picked={journey?.picked ?? []}
-      />
-
-      <article className="reading-card">
-        {/* Header */}
-        <header>
-          <h1 className="reading-title">
-            {current?.node.title ?? "Chapter"}
-          </h1>
-          <div className="reading-meta">
-            Chapter {current?.node.stepNo ?? "—"} of {totalSteps} · Coins{" "}
-            <b>{me?.coins ?? "—"}</b>{" "}
-            <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
-              {me?.plan?.toUpperCase?.() ?? "FREE"}
-            </span>
-          </div>
-        </header>
-
-        {/* Content */}
-        <section className="reading-content">
-          {current?.node.content ?? ""}
-        </section>
-
-        <div className="reading-divider" />
-
-        {/* Rating */}
-        {/* Rating (Premium parchment UI) */}
-        <section className="reading-section rating-box rating-glow">
-          <div className="rating-header">
-            <div>
-              <div className="text-base font-extrabold text-slate-900">
-                Leave your mark
-              </div>
-              <div className="text-xs text-slate-600 mt-1">
-                {current?.node.isStart
-                  ? "Optional for the first chapter."
-                  : "Required before choosing the next genre."}
-              </div>
-            </div>
-
-            {ratingSubmitted ? (
-              <span className="rating-stamp">
-                ✓ Rated
-                {coinsAwardedLast ? (
-                  <span>
-                    • <b>+{coinsAwardedLast}</b> coins
-                  </span>
-                ) : null}
-              </span>
-            ) : (
-              <span className="story-chip">RATE 1–5</span>
-            )}
-          </div>
-
-          <div className="rating-scale">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                className={`rating-pill ${rating === n ? "rating-pill-selected" : ""}`}
-                onClick={() => setRating(n)}
-                type="button"
-                aria-pressed={rating === n}
-              >
-                {n}
-              </button>
-            ))}
-
-            <button
-              className="rating-submit"
-              onClick={submitRating}
-              disabled={ratingSubmitted}
-              type="button"
-            >
-              {ratingSubmitted ? "Submitted" : "Submit Rating"}
-            </button>
-          </div>
-
-          {!current?.node.isStart && !ratingSubmitted && (
-            <div className="rating-helper">
-              Note: Rating is required before you can continue.
-            </div>
-          )}
-        </section>
-
-
-        <div className="reading-divider" />
-
-        {/* Choices / Finish */}
-        <section className="reading-section">
-          {current?.node.stepNo === 5 ? (
-            <div className="rating-box">
-              <h2 className="text-lg font-bold text-slate-900">
-                Final Chapter
-              </h2>
-              <p className="mt-1 text-slate-600">
-                Rate this chapter and finish your journey.
-              </p>
-
-              <button
-                className="mt-5 btn-wax"
-                onClick={finishJourney}
-                disabled={finishing}
-                type="button"
-              >
-                {finishing ? "Finishing…" : "Finish Journey"}
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="reading-section">
-              <div>
-                <div className="genre-section-title">
-                  Choose the path of the story
-                </div>
-                <div className="genre-section-sub">
-                  This decision will permanently shape your journey.
-                </div>
-              </div>
-
-  <div className="genre-grid">
-    {(current?.choices ?? []).map((c) => (
-      <button
-        key={c.genreKey}
-        className="genre-card text-left"
-        onClick={() => chooseGenre(c.genreKey)}
-        type="button"
-      >
-        <div className="genre-name">
-          {c.genreKey}
-        </div>
-
-        <div className="genre-rating">
-          Avg reader rating:{" "}
-          <b>{c.avgRating ?? "—"}</b>
-        </div>
-
-        <div className="genre-arrow">→</div>
-      </button>
-    ))}
-  </div>
-</div>
-
-            </>
-          )}
-        </section>
-      </article>
-    </div>
-  </main>
-);
-
 }

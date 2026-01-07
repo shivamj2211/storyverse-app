@@ -25,6 +25,12 @@ button {
   padding: 1rem;
 }
 
+@media (max-width: 640px) {
+  .container {
+    padding: 2px !important;
+  }
+}
+
 /* Simple stepper styles */
 .stepper {
   display: flex;
@@ -590,7 +596,7 @@ button {
   background:
     radial-gradient(900px 600px at 20% 10%, rgba(120,53,15,0.10), transparent 60%),
     linear-gradient(180deg, #fbf3e6 0%, #f6ead6 60%, #f2e2c6 100%);
-  padding: 56px 16px 80px;
+  padding: 8px 8px 30px;
 }
 
 .reading-shell{
@@ -1143,7 +1149,10 @@ button {
 /* Mobile padding fix for parchment panels */
 @media (max-width: 640px){
   .parchment-panel{
-    padding: 28px 20px;
+    padding: 15px 15px;
+  }
+  .parchment-wrap{
+    padding: 1px 5px;
   }
 }
 

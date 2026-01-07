@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, authHeaders, getToken } from "./lib/api";
@@ -56,11 +56,24 @@ export default function StoriesPage() {
   const [stories, setStories] = useState<Story[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
   // UI
-  const [q, setQ] = useState("");
+  const [qInput, setQInput] = useState(""); // input only
+  const [q, setQ] = useState(""); // actual query
+
+  // ✅ Mobile filters toggle
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // debounce qInput -> q
+  useEffect(() => {
+    const t = setTimeout(() => setQ(qInput), 200);
+    return () => clearTimeout(t);
+  }, [qInput]);
+
   const [category, setCategory] = useState<CategoryKey>("all");
   const [minRating, setMinRating] = useState<RatingKey>(0);
   const [sort, setSort] = useState<SortKey>("updated");
@@ -73,10 +86,31 @@ export default function StoriesPage() {
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
 
+  const selectedCount = selectedGenres.length;
+
+  const hasActiveFilters = useMemo(() => {
+    return (
+      q.trim() ||
+      selectedCount > 0 ||
+      category !== "all" ||
+      minRating !== 0 ||
+      sort !== "updated"
+    );
+  }, [q, selectedCount, category, minRating, sort]);
+
   function toggleGenre(key: string) {
     setSelectedGenres((prev) =>
       prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
     );
+  }
+
+  function resetAll() {
+    setQInput("");
+    setQ("");
+    setCategory("all");
+    setMinRating(0);
+    setSort("updated");
+    setSelectedGenres([]);
   }
 
   async function fetchGenres() {
@@ -95,7 +129,9 @@ export default function StoriesPage() {
 
   async function fetchStories(reset = true) {
     if (reset) {
-      setLoading(true);
+      // ✅ don’t unmount the whole UI while typing
+      if (stories.length === 0) setLoading(true);
+      else setRefreshing(true);
       setOffset(0);
     } else {
       setLoadingMore(true);
@@ -138,33 +174,18 @@ export default function StoriesPage() {
         runs7d: safeNumber(s.runs7d),
       })) as Story[];
 
-      // ✅ Frontend fallback filters (in case backend doesn't filter correctly)
+      // fallback filters
       let filteredIncoming = incoming;
-
-      if (category === "saved") {
-        filteredIncoming = filteredIncoming.filter((s) => s.saved === true);
-      }
-
-      if (category === "top") {
-        filteredIncoming = filteredIncoming.filter((s) => (s.avgRating || 0) >= 4);
-      }
-
-      if (category === "new") {
-        filteredIncoming = filteredIncoming.slice(0, limit);
-      }
-
+      if (category === "saved") filteredIncoming = filteredIncoming.filter((s) => s.saved);
+      if (category === "top") filteredIncoming = filteredIncoming.filter((s) => (s.avgRating || 0) >= 4);
+      if (category === "new") filteredIncoming = filteredIncoming.slice(0, limit);
       if (category === "trending") {
         filteredIncoming = filteredIncoming
           .sort((a, b) => (b.runs7d || 0) - (a.runs7d || 0))
           .slice(0, limit);
       }
+      if (minRating > 0) filteredIncoming = filteredIncoming.filter((s) => (s.avgRating || 0) >= minRating);
 
-      // ✅ Rating fallback
-      if (minRating > 0) {
-        filteredIncoming = filteredIncoming.filter((s) => (s.avgRating || 0) >= minRating);
-      }
-
-      // total fallback
       const totalFromApi = safeNumber((data as any).total);
       const effectiveTotal =
         totalFromApi > 0
@@ -188,6 +209,8 @@ export default function StoriesPage() {
     } finally {
       setLoading(false);
       setLoadingMore(false);
+      setRefreshing(false);
+      setInitialLoading(false);
     }
   }
 
@@ -258,9 +281,9 @@ export default function StoriesPage() {
   }
 
   const canLoadMore = total > 0 ? stories.length < total : false;
-  const selectedCount = selectedGenres.length;
 
-  if (loading) {
+  // ✅ Only show full loader ON FIRST LOAD
+  if (initialLoading && loading && stories.length === 0) {
     return (
       <main className="parchment-wrap">
         <div className="parchment-shell-wide">
@@ -295,195 +318,357 @@ export default function StoriesPage() {
 
   return (
     <main className="parchment-wrap">
-      {/* ✅ Less padding on mobile */}
       <div className="parchment-shell-wide space-y-4 sm:space-y-6 px-3 sm:px-0">
-        {/* ✅ Compact attractive header (small padding, mobile-friendly text) */}
         <div className="parchment-panel p-3 sm:p-6">
           <div className="panel-sticky space-y-3 sm:space-y-4">
-            {/* Hero */}
-            <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50 p-3 sm:p-5">
-              <div className="parchment-kicker">Stories</div>
-              <h1 className="text-[22px] sm:text-4xl font-extrabold tracking-tight text-slate-900 leading-tight">
-                Choose your next journey
-              </h1>
-              <p className="mt-1 text-[13px] sm:text-base text-slate-600 leading-relaxed">
-                Filter by genre & rating. Trending uses real 7-day runs.
-              </p>
+            {/* ✅ MOBILE HEADER (compact, filters under button) */}
+            <div className="sm:hidden space-y-2">
+              <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50 p-3">
+                <div className="parchment-kicker text-[10px]">Stories</div>
+                <h1 className="text-[18px] font-extrabold tracking-tight text-slate-900 leading-snug">
+                  Choose your next journey
+                </h1>
+                <p className="mt-0.5 text-[12px] text-slate-600 leading-snug">
+                  Filter by genre & rating. Trending uses real 7-day runs.
+                </p>
 
-              {/* ✅ Tabs: one line, swipeable on mobile */}
-              <div className="mt-3 flex flex-nowrap gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
-                <Link className="tab-btn tab-btn-primary shrink-0" href="/stories">
-                  Stories
-                </Link>
-                <Link className="tab-btn shrink-0" href="/saved">
-                  Saved
-                </Link>
-                <Link className="tab-btn shrink-0" href="/runs">
-                  Continue
-                </Link>
-                <Link className="tab-btn shrink-0" href="/premium">
-                  Upgrade
-                </Link>
+                <div className="mt-2 flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
+                  <Link className="tab-btn tab-btn-primary shrink-0 text-xs py-1.5 px-3" href="/stories">
+                    Stories
+                  </Link>
+                  <Link className="tab-btn shrink-0 text-xs py-1.5 px-3" href="/saved">
+                    Saved
+                  </Link>
+                  <Link className="tab-btn shrink-0 text-xs py-1.5 px-3" href="/runs">
+                    Continue
+                  </Link>
+                  <Link className="tab-btn shrink-0 text-xs py-1.5 px-3" href="/premium">
+                    Upgrade
+                  </Link>
+                </div>
               </div>
-            </div>
 
-            {/* ✅ Controls: stacked on mobile, no huge padding */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
+                value={qInput}
+                onChange={(e) => setQInput(e.target.value)}
                 placeholder="Search by title or summary…"
-                className="parchment-input text-sm py-2.5"
+                className="parchment-input text-[13px] py-2"
+                autoComplete="off"
+                spellCheck={false}
               />
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as SortKey)}
-                className="parchment-select text-sm py-2.5"
-              >
-                <option value="updated">Recently Updated</option>
-                <option value="rating">Top Rated</option>
-                <option value="trending">Trending</option>
-                <option value="title">Title A–Z</option>
-              </select>
-            </div>
 
-            {/* ✅ Chips: wrap + small text (mobile) */}
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
-                  className={`story-chip text-xs sm:text-sm ${category === "all" ? "chip-active" : ""}`}
-                  onClick={() => setCategory("all")}
                   type="button"
+                  className="story-btn story-btn-ghost text-[12px] py-1.5 whitespace-nowrap"
+                  onClick={() => setFiltersOpen((v) => !v)}
                 >
-                  All
+                  {filtersOpen ? "Close Filters" : "Filters"}
+                  {hasActiveFilters ? " • On" : ""}
                 </button>
+
                 <button
-                  className={`story-chip text-xs sm:text-sm ${category === "saved" ? "chip-active" : ""}`}
-                  onClick={() => setCategory("saved")}
                   type="button"
+                  className="story-btn story-btn-ghost text-[12px] py-1.5 whitespace-nowrap"
+                  onClick={resetAll}
+                  disabled={!hasActiveFilters}
                 >
-                  Saved
-                </button>
-                <button
-                  className={`story-chip text-xs sm:text-sm ${category === "top" ? "chip-active" : ""}`}
-                  onClick={() => setCategory("top")}
-                  type="button"
-                >
-                  ⭐ Top
-                </button>
-                <button
-                  className={`story-chip text-xs sm:text-sm ${category === "new" ? "chip-active" : ""}`}
-                  onClick={() => setCategory("new")}
-                  type="button"
-                >
-                  🆕 New
-                </button>
-                <button
-                  className={`story-chip text-xs sm:text-sm ${category === "trending" ? "chip-active" : ""}`}
-                  onClick={() => setCategory("trending")}
-                  type="button"
-                >
-                  🔥 Trending
+                  Reset
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] sm:text-xs font-semibold tracking-wide text-slate-500">
-                  RATING
-                </span>
-                <button
-                  className={`story-chip text-xs sm:text-sm ${minRating === 0 ? "chip-active" : ""}`}
-                  onClick={() => setMinRating(0)}
-                  type="button"
-                >
-                  All
-                </button>
-                <button
-                  className={`story-chip text-xs sm:text-sm ${minRating === 4 ? "chip-active" : ""}`}
-                  onClick={() => setMinRating(4)}
-                  type="button"
-                >
-                  4+
-                </button>
-                <button
-                  className={`story-chip text-xs sm:text-sm ${minRating === 4.5 ? "chip-active" : ""}`}
-                  onClick={() => setMinRating(4.5)}
-                  type="button"
-                >
-                  4.5+
-                </button>
-              </div>
-            </div>
-
-            {/* ✅ Genres: swipeable row on mobile (keeps space), wraps on desktop */}
-            <div className="rounded-2xl border border-slate-100 bg-white p-3 sm:p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] sm:text-xs font-semibold tracking-wide text-slate-500">
-                  GENRES
-                </span>
-                <span className="text-[11px] sm:text-xs text-slate-500">
-                  {stories.length} shown
-                  {total > 0 && <span className="opacity-70"> / {total}</span>}
-                </span>
-              </div>
-
-              <div className="mt-2 flex flex-nowrap gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
-                <button
-                  type="button"
-                  className={`story-chip text-xs sm:text-sm shrink-0 ${selectedCount === 0 ? "chip-active" : ""}`}
-                  onClick={() => setSelectedGenres([])}
-                >
-                  All Genres
-                </button>
-
-                {genres.map((g) => {
-                  const active = selectedGenres.includes(g.key);
-                  return (
-                    <button
-                      key={g.key}
-                      type="button"
-                      className={`story-chip text-xs sm:text-sm shrink-0 ${active ? "chip-active" : ""}`}
-                      onClick={() => toggleGenre(g.key)}
-                      title={g.label}
-                    >
-                      {g.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {(q.trim() ||
-                selectedCount > 0 ||
-                category !== "all" ||
-                minRating !== 0 ||
-                sort !== "updated") && (
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    className="runs-clear text-sm"
-                    onClick={() => {
-                      setQ("");
-                      setCategory("all");
-                      setMinRating(0);
-                      setSort("updated");
-                      setSelectedGenres([]);
-                    }}
-                    type="button"
+              {filtersOpen && (
+                <div className="rounded-2xl border border-slate-100 bg-white p-3 space-y-3">
+                  <select
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value as SortKey)}
+                    className="parchment-select text-[13px] py-2 w-full"
                   >
-                    Reset filters
-                  </button>
+                    <option value="updated">Recently Updated</option>
+                    <option value="rating">Top Rated</option>
+                    <option value="trending">Trending</option>
+                    <option value="title">Title A–Z</option>
+                  </select>
 
-                  {selectedCount > 0 && (
-                    <span className="text-[12px] text-slate-600">
-                      Filtering by <b>{selectedCount}</b> genre{selectedCount > 1 ? "s" : ""}
-                    </span>
-                  )}
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-semibold tracking-wide text-slate-500">
+                      CATEGORY
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          ["all", "All"],
+                          ["saved", "Saved"],
+                          ["top", "⭐ Top"],
+                          ["new", "🆕 New"],
+                          ["trending", "🔥 Trending"],
+                        ] as Array<[CategoryKey, string]>
+                      ).map(([k, label]) => (
+                        <button
+                          key={k}
+                          className={`story-chip text-[11px] ${category === k ? "chip-active" : ""}`}
+                          onClick={() => setCategory(k)}
+                          type="button"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-semibold tracking-wide text-slate-500">
+                      RATING
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className={`story-chip text-[11px] ${minRating === 0 ? "chip-active" : ""}`}
+                        onClick={() => setMinRating(0)}
+                        type="button"
+                      >
+                        All
+                      </button>
+                      <button
+                        className={`story-chip text-[11px] ${minRating === 4 ? "chip-active" : ""}`}
+                        onClick={() => setMinRating(4)}
+                        type="button"
+                      >
+                        4+
+                      </button>
+                      <button
+                        className={`story-chip text-[11px] ${minRating === 4.5 ? "chip-active" : ""}`}
+                        onClick={() => setMinRating(4.5)}
+                        type="button"
+                      >
+                        4.5+
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-semibold tracking-wide text-slate-500">
+                        GENRES
+                      </div>
+                      <div className="text-[10px] text-slate-500">{selectedCount} selected</div>
+                    </div>
+
+                    <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+                      <button
+                        type="button"
+                        className={`story-chip text-[11px] shrink-0 ${selectedCount === 0 ? "chip-active" : ""}`}
+                        onClick={() => setSelectedGenres([])}
+                      >
+                        All Genres
+                      </button>
+
+                      {genres.map((g) => {
+                        const active = selectedGenres.includes(g.key);
+                        return (
+                          <button
+                            key={g.key}
+                            type="button"
+                            className={`story-chip text-[11px] shrink-0 ${active ? "chip-active" : ""}`}
+                            onClick={() => toggleGenre(g.key)}
+                            title={g.label}
+                          >
+                            {g.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="story-btn story-btn-primary w-full text-[13px] py-2"
+                    onClick={() => setFiltersOpen(false)}
+                  >
+                    Apply Filters
+                  </button>
                 </div>
               )}
             </div>
+
+            {/* ✅ DESKTOP HEADER (UNCHANGED) — exactly your old UI */}
+            <div className="hidden sm:block">
+              <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50 p-3 sm:p-5">
+                <div className="parchment-kicker">Stories</div>
+                <h1 className="text-[22px] sm:text-4xl font-extrabold tracking-tight text-slate-900 leading-tight">
+                  Choose your next journey
+                </h1>
+                <p className="mt-1 text-[13px] sm:text-base text-slate-600 leading-relaxed">
+                  Filter by genre & rating. Trending uses real 7-day runs.
+                </p>
+
+                <div className="mt-3 flex flex-nowrap gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+                  <Link className="tab-btn tab-btn-primary shrink-0" href="/stories">
+                    Stories
+                  </Link>
+                  <Link className="tab-btn shrink-0" href="/saved">
+                    Saved
+                  </Link>
+                  <Link className="tab-btn shrink-0" href="/runs">
+                    Continue
+                  </Link>
+                  <Link className="tab-btn shrink-0" href="/premium">
+                    Upgrade
+                  </Link>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                <input
+                  value={qInput}
+                  onChange={(e) => setQInput(e.target.value)}
+                  placeholder="Search by title or summary…"
+                  className="parchment-input text-sm py-2.5"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+
+                <select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as SortKey)}
+                  className="parchment-select text-sm py-2.5"
+                >
+                  <option value="updated">Recently Updated</option>
+                  <option value="rating">Top Rated</option>
+                  <option value="trending">Trending</option>
+                  <option value="title">Title A–Z</option>
+                </select>
+              </div>
+
+              {/* chips + genres remain exactly your earlier desktop blocks */}
+              <div className="space-y-2 mt-3">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className={`story-chip ${category === "all" ? "chip-active" : ""}`}
+                    onClick={() => setCategory("all")}
+                    type="button"
+                  >
+                    All
+                  </button>
+                  <button
+                    className={`story-chip ${category === "saved" ? "chip-active" : ""}`}
+                    onClick={() => setCategory("saved")}
+                    type="button"
+                  >
+                    Saved
+                  </button>
+                  <button
+                    className={`story-chip ${category === "top" ? "chip-active" : ""}`}
+                    onClick={() => setCategory("top")}
+                    type="button"
+                  >
+                    ⭐ Top
+                  </button>
+                  <button
+                    className={`story-chip ${category === "new" ? "chip-active" : ""}`}
+                    onClick={() => setCategory("new")}
+                    type="button"
+                  >
+                    🆕 New
+                  </button>
+                  <button
+                    className={`story-chip ${category === "trending" ? "chip-active" : ""}`}
+                    onClick={() => setCategory("trending")}
+                    type="button"
+                  >
+                    🔥 Trending
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold tracking-wide text-slate-500">
+                    RATING
+                  </span>
+                  <button
+                    className={`story-chip ${minRating === 0 ? "chip-active" : ""}`}
+                    onClick={() => setMinRating(0)}
+                    type="button"
+                  >
+                    All
+                  </button>
+                  <button
+                    className={`story-chip ${minRating === 4 ? "chip-active" : ""}`}
+                    onClick={() => setMinRating(4)}
+                    type="button"
+                  >
+                    4+
+                  </button>
+                  <button
+                    className={`story-chip ${minRating === 4.5 ? "chip-active" : ""}`}
+                    onClick={() => setMinRating(4.5)}
+                    type="button"
+                  >
+                    4.5+
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-white p-3 sm:p-4 mt-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold tracking-wide text-slate-500">
+                    GENRES
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {stories.length} shown
+                    {total > 0 && <span className="opacity-70"> / {total}</span>}
+                  </span>
+                </div>
+
+                <div className="mt-2 flex flex-nowrap gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
+                  <button
+                    type="button"
+                    className={`story-chip shrink-0 ${selectedCount === 0 ? "chip-active" : ""}`}
+                    onClick={() => setSelectedGenres([])}
+                  >
+                    All Genres
+                  </button>
+
+                  {genres.map((g) => {
+                    const active = selectedGenres.includes(g.key);
+                    return (
+                      <button
+                        key={g.key}
+                        type="button"
+                        className={`story-chip shrink-0 ${active ? "chip-active" : ""}`}
+                        onClick={() => toggleGenre(g.key)}
+                        title={g.label}
+                      >
+                        {g.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {hasActiveFilters && (
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <button className="runs-clear text-sm" onClick={resetAll} type="button">
+                      Reset filters
+                    </button>
+
+                    {selectedCount > 0 && (
+                      <span className="text-[12px] text-slate-600">
+                        Filtering by <b>{selectedCount}</b> genre{selectedCount > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* updating indicator */}
+            {refreshing && (
+              <div className="rounded-2xl border border-slate-100 bg-white px-3 py-2 text-sm text-slate-700/80">
+                Updating results…
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ✅ Results */}
+        {/* Results */}
         {stories.length === 0 ? (
           <div className="parchment-panel p-3 sm:p-6">
             <div className="parchment-kicker">No results</div>
@@ -492,7 +677,6 @@ export default function StoriesPage() {
           </div>
         ) : (
           <>
-            {/* ✅ Mobile: 1 column, Desktop: 2 columns */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-5">
               {stories.map((story) => {
                 const rating = safeNumber(story.avgRating).toFixed(2);
@@ -504,7 +688,6 @@ export default function StoriesPage() {
                     key={story.id}
                     className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden"
                   >
-                    {/* Cover */}
                     <div className="relative h-36 sm:h-44 bg-slate-50">
                       {story.coverImageUrl ? (
                         <img
@@ -521,7 +704,6 @@ export default function StoriesPage() {
                         </div>
                       )}
 
-                      {/* Rating pill */}
                       <div className="absolute top-2 right-2">
                         <span className="inline-flex items-center gap-1 rounded-full bg-white/95 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-sm">
                           ⭐ <b>{rating}</b>
@@ -529,7 +711,6 @@ export default function StoriesPage() {
                       </div>
                     </div>
 
-                    {/* Content (✅ less padding on mobile) */}
                     <div className="p-3 sm:p-5">
                       <h2 className="text-base sm:text-lg font-bold text-slate-900 leading-snug">
                         <Link href={`/stories/${story.id}`} className="hover:underline">
@@ -559,7 +740,6 @@ export default function StoriesPage() {
                         </div>
                       )}
 
-                      {/* ✅ Mobile-friendly actions: full width buttons */}
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <button
                           onClick={() => handleRead(story.id)}
@@ -587,7 +767,6 @@ export default function StoriesPage() {
               })}
             </div>
 
-            {/* Footer / load more (✅ compact) */}
             <div className="parchment-panel p-3 sm:p-5">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div className="text-sm text-slate-700">

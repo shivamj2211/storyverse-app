@@ -26,8 +26,16 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 
-// ✅ request log (keep)
+// ✅ Logger (ok)
+app.use((req, _res, next) => {
+  console.log("🌐 REQ:", req.method, req.path);
+  next();
+});
 
+// 🔴 Stripe webhook MUST be before express.json()
+app.use("/api/premium/webhook", bodyParser.raw({ type: "application/json" }));
+
+app.use(express.json());
 
 const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost:3000",
@@ -37,7 +45,6 @@ const allowedOrigins = [
   "https://storyverse-surkashi-kerhffc7q-shivam-jaiswals-projects-49ca0bd9.vercel.app",
 ];
 
-// ✅ CORS MUST BE BEFORE ALL ROUTES
 const corsMiddleware = cors({
   origin: function (origin, cb) {
     if (!origin) return cb(null, true);
@@ -50,19 +57,12 @@ const corsMiddleware = cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 });
 
+// ✅ CORS MUST be before routes
 app.use(corsMiddleware);
-
-// ✅ IMPORTANT: answer preflight for ALL routes
+// ✅ handle preflight for all
 app.options("*", corsMiddleware);
 
-// 🔴 Stripe webhook MUST be before express.json()
-app.use("/api/premium/webhook", bodyParser.raw({ type: "application/json" }));
-
-// normal json
-app.use(express.json());
-
-// ✅ Routes (after CORS!)
-app.use("/api/coins", coinsRouter);
+// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/genres", genresRouter);
 app.use("/api/stories", storiesRoutes);
@@ -71,8 +71,7 @@ app.use("/api/saved", savedRoutes);
 app.use("/api/ratings", ratingsRoutes);
 app.use("/api/premium", premiumRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/coins", coinsRouter); // ✅ moved here
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`✅ Backend running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Backend running on port ${PORT}`));

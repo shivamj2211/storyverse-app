@@ -17,6 +17,10 @@ type MePayload = {
     coins?: number;
     is_admin?: boolean;
     is_premium?: boolean;
+
+    // ✅ Email verification fields
+    is_email_verified?: boolean;
+    email_verified_at?: string | null;
   };
 };
 
@@ -44,6 +48,7 @@ type CoinHistoryItem = {
   note?: string | null; // for earn source too
   created_at: string; // ISO
 };
+
 function formatPhone(p?: string | null) {
   if (!p) return "—";
   const s = String(p).trim();
@@ -170,39 +175,44 @@ export default function ProfilePage() {
   const [useLoading, setUseLoading] = useState(false);
   const [useErr, setUseErr] = useState<string | null>(null);
   const [usedHistory, setUsedHistory] = useState<CoinHistoryItem[]>([]);
+
   type ThemePref = "system" | "light" | "dark";
 
-const [themePref, setThemePref] = useState<ThemePref>("system");
-const [hideEmail, setHideEmail] = useState(false);
-const [autoScroll, setAutoScroll] = useState(false);
-const [reduceMotion, setReduceMotion] = useState(false);
+  const [themePref, setThemePref] = useState<ThemePref>("system");
+  const [hideEmail, setHideEmail] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
 
-useEffect(() => {
-  if (typeof window === "undefined") return;
-  setThemePref((localStorage.getItem("sv_theme") as ThemePref) || "system");
-  setHideEmail(localStorage.getItem("sv_hide_email") === "1");
-  setAutoScroll(localStorage.getItem("sv_autoscroll") === "1");
-  setReduceMotion(localStorage.getItem("sv_reduce_motion") === "1");
-}, []);
+  // ✅ Email verification UI state
+  const [verifySending, setVerifySending] = useState(false);
+  const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
 
-useEffect(() => {
-  if (typeof window === "undefined") return;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setThemePref((localStorage.getItem("sv_theme") as ThemePref) || "system");
+    setHideEmail(localStorage.getItem("sv_hide_email") === "1");
+    setAutoScroll(localStorage.getItem("sv_autoscroll") === "1");
+    setReduceMotion(localStorage.getItem("sv_reduce_motion") === "1");
+  }, []);
 
-  localStorage.setItem("sv_theme", themePref);
-  localStorage.setItem("sv_hide_email", hideEmail ? "1" : "0");
-  localStorage.setItem("sv_autoscroll", autoScroll ? "1" : "0");
-  localStorage.setItem("sv_reduce_motion", reduceMotion ? "1" : "0");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
-  // Apply theme (Tailwind dark mode expects class "dark" on html)
-  const root = document.documentElement;
-  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+    localStorage.setItem("sv_theme", themePref);
+    localStorage.setItem("sv_hide_email", hideEmail ? "1" : "0");
+    localStorage.setItem("sv_autoscroll", autoScroll ? "1" : "0");
+    localStorage.setItem("sv_reduce_motion", reduceMotion ? "1" : "0");
 
-  const shouldDark = themePref === "dark" ? true : themePref === "light" ? false : prefersDark;
-  root.classList.toggle("dark", shouldDark);
+    // Apply theme (Tailwind dark mode expects class "dark" on html)
+    const root = document.documentElement;
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
 
-  // Optional: reduce motion hook for your UI
-  root.classList.toggle("sv-reduce-motion", reduceMotion);
-}, [themePref, hideEmail, autoScroll, reduceMotion]);
+    const shouldDark = themePref === "dark" ? true : themePref === "light" ? false : prefersDark;
+    root.classList.toggle("dark", shouldDark);
+
+    // Optional: reduce motion hook for your UI
+    root.classList.toggle("sv-reduce-motion", reduceMotion);
+  }, [themePref, hideEmail, autoScroll, reduceMotion]);
 
   async function fetchCoinSummary() {
     try {
@@ -222,8 +232,6 @@ useEffect(() => {
     setEarnErr(null);
     setEarnLoading(true);
     try {
-      // preferred:
-      // GET /api/coins/history?type=earn
       const res = await fetch(api("/api/coins/history?type=earn"), {
         headers: { ...authHeaders() },
         cache: "no-store",
@@ -238,7 +246,6 @@ useEffect(() => {
       const items = Array.isArray(raw) ? raw : raw.items;
       const all = (items || []) as CoinHistoryItem[];
 
-      // fallback filtering (if backend ignores query params)
       setEarnedHistory(all.filter((x) => x.type === "earn" || x.type === "adjust"));
     } catch {
       setEarnErr("Network error while loading earned history.");
@@ -251,8 +258,6 @@ useEffect(() => {
     setUseErr(null);
     setUseLoading(true);
     try {
-      // preferred:
-      // GET /api/coins/history?type=redeem
       const res = await fetch(api("/api/coins/history?type=redeem"), {
         headers: { ...authHeaders() },
         cache: "no-store",
@@ -267,12 +272,55 @@ useEffect(() => {
       const items = Array.isArray(raw) ? raw : raw.items;
       const all = (items || []) as CoinHistoryItem[];
 
-      // fallback filtering (if backend ignores query params)
       setUsedHistory(all.filter((x) => x.type === "redeem"));
     } catch {
       setUseErr("Network error while loading usage history.");
     } finally {
       setUseLoading(false);
+    }
+  }
+
+  // ✅ Refresh /me helper (used after resend)
+  async function refreshMe() {
+    try {
+      const meRes = await fetch(api("/api/auth/me"), {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      const meData = (await meRes.json().catch(() => ({}))) as MePayload;
+      if (meRes.ok && meData?.user) setMe(meData.user);
+    } catch {
+      // ignore
+    }
+  }
+
+  // ✅ Resend verification email
+  async function resendVerification() {
+    setVerifyMsg(null);
+    setVerifySending(true);
+    try {
+      const res = await fetch(api("/api/auth/resend-verification"), {
+        method: "POST",
+        headers: { ...authHeaders() },
+      });
+      const data = await res.json().catch(() => ({} as any));
+
+      if (!res.ok) {
+        setVerifyMsg(data?.error || "Failed to resend verification email.");
+        return;
+      }
+
+      if (data?.status === "already_verified") {
+        setVerifyMsg("Your email is already verified ✅");
+        await refreshMe();
+        return;
+      }
+
+      setVerifyMsg("Verification email sent ✅ Please check inbox/spam.");
+    } catch {
+      setVerifyMsg("Network error. Try again.");
+    } finally {
+      setVerifySending(false);
     }
   }
 
@@ -304,7 +352,6 @@ useEffect(() => {
 
         await fetchCoinSummary();
 
-        // load earned list for "Recent activity" + progress UX
         await fetchEarnedHistory();
         await fetchUsedHistory();
 
@@ -409,32 +456,29 @@ useEffect(() => {
 
   const smartHint = hintText(plan, availableCoins);
 
-  // Recent activity: prefer showing earned + used mixed, but your request says recent activity last 3 (earned is ok too).
   const mergedRecent = [...(earnedHistory || []), ...(usedHistory || [])]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 3);
 
-  // Account update helpers
   async function saveProfileChanges() {
     setAcctErr(null);
     setAcctLoading(true);
     try {
-      const res = await fetch(api('/api/auth/me'), {
-        method: 'PATCH',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      const res = await fetch(api("/api/auth/me"), {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ full_name: editFullName || null, phone: editPhone || null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setAcctErr(data.error || 'Unable to save profile');
+        setAcctErr(data.error || "Unable to save profile");
         return;
       }
       setMe(data.user);
       setEditOpen(false);
-      // notify other UI
-      if (typeof window !== 'undefined') window.dispatchEvent(new Event('authChanged'));
-    } catch (e) {
-      setAcctErr('Network error');
+      if (typeof window !== "undefined") window.dispatchEvent(new Event("authChanged"));
+    } catch {
+      setAcctErr("Network error");
     } finally {
       setAcctLoading(false);
     }
@@ -444,24 +488,24 @@ useEffect(() => {
     setAcctErr(null);
     setAcctLoading(true);
     try {
-      const res = await fetch(api('/api/auth/me/email'), {
-        method: 'PATCH',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      const res = await fetch(api("/api/auth/me/email"), {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ email: newEmail, password: emailPassword }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setAcctErr(data.error || 'Unable to change email');
+        setAcctErr(data.error || "Unable to change email");
         return;
       }
       if (data.token) {
-        localStorage.setItem('token', data.token);
+        localStorage.setItem("token", data.token);
       }
       setMe(data.user || me);
       setEmailOpen(false);
-      if (typeof window !== 'undefined') window.dispatchEvent(new Event('authChanged'));
-    } catch (e) {
-      setAcctErr('Network error');
+      if (typeof window !== "undefined") window.dispatchEvent(new Event("authChanged"));
+    } catch {
+      setAcctErr("Network error");
     } finally {
       setAcctLoading(false);
     }
@@ -471,20 +515,19 @@ useEffect(() => {
     setAcctErr(null);
     setAcctLoading(true);
     try {
-      const res = await fetch(api('/api/auth/me/password'), {
-        method: 'PATCH',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      const res = await fetch(api("/api/auth/me/password"), {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setAcctErr(data.error || 'Unable to change password');
+        setAcctErr(data.error || "Unable to change password");
         return;
       }
       setPassOpen(false);
-      // show success briefly
-    } catch (e) {
-      setAcctErr('Network error');
+    } catch {
+      setAcctErr("Network error");
     } finally {
       setAcctLoading(false);
     }
@@ -501,66 +544,97 @@ useEffect(() => {
           <p className="parchment-sub">View your account status, coins, and reading progress.</p>
 
           <div className="tab-row">
-            <Link className="tab-btn" href="/stories">Stories</Link>
-            <Link className="tab-btn" href="/saved">Saved</Link>
-            <Link className="tab-btn" href="/runs">Continue Reading</Link>
-            
+            <Link className="tab-btn" href="/stories">
+              Stories
+            </Link>
+            <Link className="tab-btn" href="/saved">
+              Saved
+            </Link>
+            <Link className="tab-btn" href="/runs">
+              Continue Reading
+            </Link>
           </div>
 
           <div className="hr-ink" />
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
             {/* Profile summary card (left, larger) */}
-            {/* Profile summary card (clean identity card) */}
-          <div className="md:col-span-2 rounded-3xl border border-slate-200 bg-white/70 p-6">
-            <div className="flex items-start gap-4">
-              <div className="h-20 w-20 shrink-0 rounded-full bg-emerald-50 flex items-center justify-center text-2xl font-extrabold text-emerald-700">
-                {me.email ? initialsFromEmail(me.email) : "U"}
+            <div className="md:col-span-2 rounded-3xl border border-slate-200 bg-white/70 p-6">
+              <div className="flex items-start gap-4">
+                <div className="h-20 w-20 shrink-0 rounded-full bg-emerald-50 flex items-center justify-center text-2xl font-extrabold text-emerald-700">
+                  {me.email ? initialsFromEmail(me.email) : "U"}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-slate-500 uppercase tracking-[0.22em]">Account</div>
+                  <div className="mt-2 text-2xl font-extrabold text-slate-900 truncate">
+                    {me.full_name || displayNameFromEmail(me.email)}
+                  </div>
+
+                  {/* ✅ Email verification banner (only if NOT verified) */}
+                  {me.email && me.is_email_verified === false && (
+                    <div className="mt-4 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-extrabold text-amber-900">Verify your email</div>
+                          <div className="mt-1 text-sm text-amber-900/80">
+                            Please verify your email to unlock coins, premium chapters, and secure your account.
+                          </div>
+                          {verifyMsg && <div className="mt-2 text-sm font-semibold text-amber-900">{verifyMsg}</div>}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="rounded-2xl bg-amber-900 px-4 py-2 text-sm font-extrabold text-white hover:opacity-95 disabled:opacity-60"
+                            disabled={verifySending}
+                            onClick={resendVerification}
+                          >
+                            {verifySending ? "Sending…" : "Resend email"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Labeled grid */}
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3">
+                      <div className="text-[11px] font-bold tracking-[0.18em] uppercase text-slate-600/80">Full name</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-900 truncate">{me.full_name || "—"}</div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3">
+                      <div className="text-[11px] font-bold tracking-[0.18em] uppercase text-slate-600/80">Email</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-900 truncate">
+                        {hideEmail ? "Hidden" : me.email || "—"}
+                      </div>
+
+                      {/* ✅ Verified / Not verified badge */}
+                      <div className="mt-2 text-xs font-bold">
+                        {me.is_email_verified ? (
+                          <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-800">Verified ✅</span>
+                        ) : (
+                          <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-900">Not verified</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3">
+                      <div className="text-[11px] font-bold tracking-[0.18em] uppercase text-slate-600/80">Phone</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-900 truncate">{formatPhone(me.phone)}</div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3">
+                      <div className="text-[11px] font-bold tracking-[0.18em] uppercase text-slate-600/80">Age</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-900 truncate">{formatAge(me.age)}</div>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                </div>
               </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="text-sm text-slate-500 uppercase tracking-[0.22em]">Account</div>
-            <div className="mt-2 text-2xl font-extrabold text-slate-900 truncate">
-              {me.full_name || displayNameFromEmail(me.email)}
             </div>
-
-          {/* Labeled grid */}
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3">
-              <div className="text-[11px] font-bold tracking-[0.18em] uppercase text-slate-600/80">Full name</div>
-              <div className="mt-1 text-sm font-semibold text-slate-900 truncate">
-                {me.full_name || "—"}
-              </div>
-            </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3">
-          <div className="text-[11px] font-bold tracking-[0.18em] uppercase text-slate-600/80">Email</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900 truncate">
-            {hideEmail ? "Hidden" : (me.email || "—")}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3">
-          <div className="text-[11px] font-bold tracking-[0.18em] uppercase text-slate-600/80">Phone</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900 truncate">
-            {formatPhone(me.phone)}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3">
-          <div className="text-[11px] font-bold tracking-[0.18em] uppercase text-slate-600/80">Age</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900 truncate">
-            {formatAge(me.age)}
-          </div>
-        </div>
-      </div>
-
-      {/* Actions */}
-      
-    </div>
-  </div>
-</div>
-
 
             {/* Compact stats (right) */}
             <div className="md:col-span-1 space-y-4">
@@ -568,7 +642,9 @@ useEffect(() => {
                 <div className="stat-label">Plan</div>
                 <div className="stat-value">{plan === "creator" ? "Creator" : plan === "premium" ? "Premium" : "Free"}</div>
                 <div className="stat-note">{plan === "free" ? "Upgrade to unlock replay & more." : "Enjoy your benefits."}</div>
-                <Link className="tab-btn tab-btn-primary" href="/premium">Upgrade</Link>
+                <Link className="tab-btn tab-btn-primary" href="/premium">
+                  Upgrade
+                </Link>
               </div>
 
               <div className="stat-card">
@@ -579,214 +655,234 @@ useEffect(() => {
             </div>
           </div>
 
-
-               {/* Account actions */}
+          {/* Account actions */}
           <div className="parchment-panel mt-4">
             <div className="parchment-kicker">Account</div>
             <div className="parchment-h1">Manage your account</div>
             <p className="parchment-sub">Change name, phone, email or password.</p>
 
-            <div className="mt-4 flex gap-2">
-              <button className="btn-primary" onClick={() => { setEditFullName(me.full_name || ""); setEditPhone(me.phone || ""); setEditOpen(true); }}>
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <button
+                className="btn-primary !mt-0 w-full whitespace-nowrap text-sm"
+                onClick={() => {
+                  setEditFullName(me.full_name || "");
+                  setEditPhone(me.phone || "");
+                  setEditOpen(true);
+                }}
+              >
                 Edit profile
               </button>
-              <button className="btn-ghost" onClick={() => { setNewEmail(me.email || ""); setEmailPassword(""); setEmailOpen(true); }}>
+
+              <button
+                className="btn-ghost w-full whitespace-nowrap text-sm"
+                onClick={() => {
+                  setNewEmail(me.email || "");
+                  setEmailPassword("");
+                  setEmailOpen(true);
+                }}
+              >
                 Change email
               </button>
-              <button className="btn-ghost" onClick={() => { setCurrentPassword(""); setNewPassword(""); setPassOpen(true); }}>
+
+              <button
+                className="btn-ghost w-full whitespace-nowrap text-sm"
+                onClick={() => {
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setPassOpen(true);
+                }}
+              >
                 Change password
               </button>
             </div>
           </div>
         </div>
-          {/* Coins Wallet */}
-          {/* Coins quick section (separate from stat cards) */}
-<div className="parchment-panel mt-4">
-  <div className="flex flex-wrap items-start justify-between gap-4">
-    <div className="min-w-0">
-      <div className="parchment-kicker">Coins</div>
-      <div className="parchment-h1" style={{ fontSize: 22 }}>
-        Available Coins
-      </div>
-      <p className="parchment-sub">
-        Your total available coins. Use them to unlock Chapter 3+ (free users).
-      </p>
-    </div>
 
-    <div className="flex items-center gap-3">
-      <div className="h-11 inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4">
-        <span className="text-sm font-semibold text-slate-700/70">Total</span>
-        <span className="min-w-[28px] text-right text-lg font-extrabold text-slate-900">
-          {coins}
-        </span>
-        <span className="text-sm text-slate-700/70">🪙</span>
-      </div>
+        {/* Coins quick section */}
+        <div className="parchment-panel mt-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="parchment-kicker">Coins</div>
+              <div className="parchment-h1" style={{ fontSize: 22 }}>
+                Available Coins
+              </div>
+              <p className="parchment-sub">Your total available coins. Use them to unlock Chapter 3+ (free users).</p>
+            </div>
 
-      <button
-        type="button"
-        className="h-11 inline-flex items-center justify-center rounded-2xl px-6 text-sm font-extrabold text-white shadow-sm
+            <div className="flex items-center gap-3">
+              <div className="h-11 inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4">
+                <span className="text-sm font-semibold text-slate-700/70">Total</span>
+                <span className="min-w-[28px] text-right text-lg font-extrabold text-slate-900">{coins}</span>
+                <span className="text-sm text-slate-700/70">🪙</span>
+              </div>
+
+              <button
+                type="button"
+                className="h-11 inline-flex items-center justify-center rounded-2xl px-6 text-sm font-extrabold text-white shadow-sm
                    bg-gradient-to-r from-emerald-700 to-amber-700 hover:opacity-95"
-        onClick={() => router.push("/wallet")}
-      >
-        Open Wallet
-      </button>
-    </div>
-  </div>
-
-  <div className="hr-ink" />
-
-  {/* How to earn coins (compact + nice) */}
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-    <div className="rounded-3xl border border-slate-200 bg-white/70 p-4">
-      <div className="text-sm font-extrabold text-slate-900">How to earn coins</div>
-
-      <ul className="mt-3 space-y-2 text-sm text-slate-700/80">
-        <li>✅ Rate a journey after reading</li>
-        <li>✅ Complete stories & earn rewards</li>
-        <li>✅ Replays may also reward coins</li>
-      </ul>
-
-      <div className="mt-4 text-[11px] text-slate-700/70">
-        Tip: Open Wallet to see earning history + expiry.
-      </div>
-    </div>
-
-    {/* Quick rule */}
-    <div className="rounded-3xl border border-slate-200 bg-white/70 p-4">
-      <div className="text-sm font-extrabold text-slate-900">Unlock rule</div>
-      <p className="mt-2 text-sm text-slate-700/80">
-        Free users unlock Chapter 3+ at <b className="text-slate-900">20 coins</b>.
-      </p>
-      <div className="mt-4 flex gap-2">
-        <Link className="btn-ghost" href="/stories">Browse</Link>
-        <Link className="btn-ghost" href="/premium">Upgrade</Link>
-      </div>
-    </div>
-
-    {/* Small CTA */}
-    <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white/80 to-white/40 p-4">
-      <div className="text-sm font-extrabold text-slate-900">Wallet includes</div>
-      <ul className="mt-3 space-y-2 text-sm text-slate-700/80">
-        <li>✅ Earned coins details</li>
-        <li>✅ Expiry (1 year)</li>
-        <li>✅ Redeem/usage history</li>
-      </ul>
-      <button
-        type="button"
-        className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-900 hover:bg-slate-50"
-        onClick={() => router.push("/wallet")}
-      >
-        View Wallet Details
-      </button>
-    </div>
-  </div>
-</div>
-
-          {/* <CoinsWallet plan={plan} fallbackCoins={coins} /> */}
-
-
-          {/* Reading stats */}
-          <div className="callout-box">
-            <div className="callout-title">Reading stats</div>
-            <div className="callout-text">
-              <b>Total runs:</b> {stats.total} &nbsp;•&nbsp;
-              <b>Completed:</b> {stats.completed} &nbsp;•&nbsp;
-              <b>In progress:</b> {stats.inProgress}
-            </div>
-
-            <div className="primary-actions">
-              <Link className="btn-primary" href="/runs">Open Library</Link>
-              {plan === "free" ? (
-                <Link className="btn-ghost" href="/premium">Upgrade</Link>
-              ) : (
-                <Link className="btn-ghost" href="/stories">Pick New Story</Link>
-              )}
+                onClick={() => router.push("/wallet")}
+              >
+                Open Wallet
+              </button>
             </div>
           </div>
 
-       
+          <div className="hr-ink" />
 
-              {/* Settings */}
-<div className="parchment-panel mt-4">
-  <div className="parchment-kicker">Settings</div>
-  <div className="parchment-h1">App preferences</div>
-  <p className="parchment-sub">Personalize your reading experience.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-3xl border border-slate-200 bg-white/70 p-4">
+              <div className="text-sm font-extrabold text-slate-900">How to earn coins</div>
 
-  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-    {/* Theme */}
-    <div className="rounded-3xl border border-slate-200 bg-white/70 p-4">
-      <div className="text-sm font-extrabold text-slate-900">Theme</div>
-      <p className="mt-1 text-sm text-slate-700/80">Choose how Storyverse looks.</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-700/80">
+                <li>✅ Rate a journey after reading</li>
+                <li>✅ Complete stories & earn rewards</li>
+                <li>✅ Replays may also reward coins</li>
+              </ul>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {(["system", "light", "dark"] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            className={`rounded-2xl border px-4 py-2 text-sm font-bold ${
-              themePref === v ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-white text-slate-900"
-            }`}
-            onClick={() => setThemePref(v)}
-          >
-            {v === "system" ? "System" : v === "light" ? "Light" : "Dark"}
-          </button>
-        ))}
-      </div>
-    </div>
+              <div className="mt-4 text-[11px] text-slate-700/70">Tip: Open Wallet to see earning history + expiry.</div>
+            </div>
 
-    {/* Reader options */}
-    <div className="rounded-3xl border border-slate-200 bg-white/70 p-4">
-      <div className="text-sm font-extrabold text-slate-900">Reader</div>
-      <p className="mt-1 text-sm text-slate-700/80">Small switches that improve comfort.</p>
+            <div className="rounded-3xl border border-slate-200 bg-white/70 p-4">
+              <div className="text-sm font-extrabold text-slate-900">Unlock rule</div>
+              <p className="mt-2 text-sm text-slate-700/80">
+                Free users unlock Chapter 3+ at <b className="text-slate-900">20 coins</b>.
+              </p>
+              <div className="mt-4 flex gap-2">
+                <Link className="btn-ghost" href="/stories">
+                  Browse
+                </Link>
+                <Link className="btn-ghost" href="/premium">
+                  Upgrade
+                </Link>
+              </div>
+            </div>
 
-      <div className="mt-3 space-y-3">
-        <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
-          <div>
-            <div className="text-sm font-bold text-slate-900">Auto scroll</div>
-            <div className="text-xs text-slate-700/70">Helpful for long chapters.</div>
+            <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white/80 to-white/40 p-4">
+              <div className="text-sm font-extrabold text-slate-900">Wallet includes</div>
+              <ul className="mt-3 space-y-2 text-sm text-slate-700/80">
+                <li>✅ Earned coins details</li>
+                <li>✅ Expiry (1 year)</li>
+                <li>✅ Redeem/usage history</li>
+              </ul>
+              <button
+                type="button"
+                className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-900 hover:bg-slate-50"
+                onClick={() => router.push("/wallet")}
+              >
+                View Wallet Details
+              </button>
+            </div>
           </div>
-          <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
-        </label>
+        </div>
 
-        <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
-          <div>
-            <div className="text-sm font-bold text-slate-900">Reduce motion</div>
-            <div className="text-xs text-slate-700/70">Less animation and movement.</div>
+        {/* Reading stats */}
+        <div className="callout-box">
+          <div className="callout-title">Reading stats</div>
+          <div className="callout-text">
+            <b>Total runs:</b> {stats.total} &nbsp;•&nbsp;
+            <b>Completed:</b> {stats.completed} &nbsp;•&nbsp;
+            <b>In progress:</b> {stats.inProgress}
           </div>
-          <input type="checkbox" checked={reduceMotion} onChange={(e) => setReduceMotion(e.target.checked)} />
-        </label>
 
-        <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
-          <div>
-            <div className="text-sm font-bold text-slate-900">Hide email on profile</div>
-            <div className="text-xs text-slate-700/70">Prevents showing it on screen.</div>
+          <div className="primary-actions">
+            <Link className="btn-primary" href="/runs">
+              Open Library
+            </Link>
+            {plan === "free" ? (
+              <Link className="btn-ghost" href="/premium">
+                Upgrade
+              </Link>
+            ) : (
+              <Link className="btn-ghost" href="/stories">
+                Pick New Story
+              </Link>
+            )}
           </div>
-          <input type="checkbox" checked={hideEmail} onChange={(e) => setHideEmail(e.target.checked)} />
-        </label>
-      </div>
-    </div>
-  </div>
+        </div>
 
-  <div className="hr-ink" />
+        {/* Settings */}
+        <div className="parchment-panel mt-4">
+          <div className="parchment-kicker">Settings</div>
+          <div className="parchment-h1">App preferences</div>
+          <p className="parchment-sub">Personalize your reading experience.</p>
 
-  <div className="flex flex-wrap gap-2">
-    <button
-      className="btn-ghost"
-      onClick={() => {
-        localStorage.removeItem("token");
-        if (typeof window !== "undefined") window.dispatchEvent(new Event("authChanged"));
-        router.push("/login");
-      }}
-    >
-      Logout
-    </button>
-  </div>
-</div>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-3xl border border-slate-200 bg-white/70 p-4">
+              <div className="text-sm font-extrabold text-slate-900">Theme</div>
+              <p className="mt-1 text-sm text-slate-700/80">Choose how Storyverse looks.</p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(["system", "light", "dark"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`rounded-2xl border px-4 py-2 text-sm font-bold ${
+                      themePref === v
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                        : "border-slate-200 bg-white text-slate-900"
+                    }`}
+                    onClick={() => setThemePref(v)}
+                  >
+                    {v === "system" ? "System" : v === "light" ? "Light" : "Dark"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white/70 p-4">
+              <div className="text-sm font-extrabold text-slate-900">Reader</div>
+              <p className="mt-1 text-sm text-slate-700/80">Small switches that improve comfort.</p>
+
+              <div className="mt-3 space-y-3">
+                <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">Auto scroll</div>
+                    <div className="text-xs text-slate-700/70">Helpful for long chapters.</div>
+                  </div>
+                  <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
+                </label>
+
+                <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">Reduce motion</div>
+                    <div className="text-xs text-slate-700/70">Less animation and movement.</div>
+                  </div>
+                  <input type="checkbox" checked={reduceMotion} onChange={(e) => setReduceMotion(e.target.checked)} />
+                </label>
+
+                <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">Hide email on profile</div>
+                    <div className="text-xs text-slate-700/70">Prevents showing it on screen.</div>
+                  </div>
+                  <input type="checkbox" checked={hideEmail} onChange={(e) => setHideEmail(e.target.checked)} />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="hr-ink" />
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn-ghost"
+              onClick={() => {
+                localStorage.removeItem("token");
+                if (typeof window !== "undefined") window.dispatchEvent(new Event("authChanged"));
+                router.push("/login");
+              }}
+            >
+              Logout
+            </button>
+          </div>
+        </div>
 
         {/* Latest journeys */}
         <div className="parchment-panel">
           <div className="parchment-kicker">Recent</div>
-          <div className="parchment-h1" style={{ fontSize: 22 }}>Your latest journeys</div>
+          <div className="parchment-h1" style={{ fontSize: 22 }}>
+            Your latest journeys
+          </div>
           <p className="parchment-sub">Quick access to your recent runs.</p>
 
           {runs.length === 0 ? (
@@ -818,7 +914,9 @@ useEffect(() => {
           )}
 
           <div className="primary-actions">
-            <Link className="btn-ghost" href="/runs">View all runs</Link>
+            <Link className="btn-ghost" href="/runs">
+              View all runs
+            </Link>
           </div>
         </div>
       </div>
@@ -826,14 +924,15 @@ useEffect(() => {
       {/* ===== MODAL 1: EARNED COINS DETAILS (Top View Details) ===== */}
       {earnOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setEarnOpen(false)}>
-          <div className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">Earned Coins</div>
                 <h3 className="mt-2 text-xl font-extrabold text-slate-900">Earning history & expiry</h3>
-                <p className="mt-1 text-sm text-slate-700/80">
-                  Each earned coin expires after {COIN_EXPIRY_YEARS} year(s) from the earning date.
-                </p>
+                <p className="mt-1 text-sm text-slate-700/80">Each earned coin expires after {COIN_EXPIRY_YEARS} year(s) from the earning date.</p>
               </div>
 
               <button
@@ -850,14 +949,10 @@ useEffect(() => {
                 <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3 text-sm text-slate-700/80">Loading earned history…</div>
               )}
 
-              {!earnLoading && earnErr && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{earnErr}</div>
-              )}
+              {!earnLoading && earnErr && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{earnErr}</div>}
 
               {!earnLoading && !earnErr && earnedHistory.length === 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3 text-sm text-slate-700/80">
-                  No earned coin entries yet.
-                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3 text-sm text-slate-700/80">No earned coin entries yet.</div>
               )}
 
               {!earnLoading && !earnErr && earnedHistory.length > 0 && (
@@ -885,17 +980,13 @@ useEffect(() => {
                                 <div className="mt-1 text-sm text-slate-700/80">
                                   <b>Expires:</b> {expiry.toLocaleDateString()}{" "}
                                   {typeof left === "number" && (
-                                    <span className="text-slate-900/70 font-semibold">
-                                      • {left <= 0 ? "Expired" : `${left} day(s) left`}
-                                    </span>
+                                    <span className="text-slate-900/70 font-semibold">• {left <= 0 ? "Expired" : `${left} day(s) left`}</span>
                                   )}
                                 </div>
                               )}
                             </div>
 
-                            <div className="shrink-0 text-xs font-semibold text-slate-700/70">
-                              {h.type === "earn" ? "EARN" : "ADJUST"}
-                            </div>
+                            <div className="shrink-0 text-xs font-semibold text-slate-700/70">{h.type === "earn" ? "EARN" : "ADJUST"}</div>
                           </div>
                         </div>
                       );
@@ -919,17 +1010,26 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ===== MODAL: EDIT PROFILE (full name + phone) ===== */}
+      {/* ===== MODAL: EDIT PROFILE ===== */}
       {editOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setEditOpen(false)}>
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="w-full max-w-md rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">Edit profile</div>
                 <h3 className="mt-2 text-xl font-extrabold text-slate-900">Update name & phone</h3>
               </div>
 
-              <button type="button" className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50" onClick={() => setEditOpen(false)}>Close</button>
+              <button
+                type="button"
+                className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                onClick={() => setEditOpen(false)}
+              >
+                Close
+              </button>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -946,8 +1046,12 @@ useEffect(() => {
               </div>
 
               <div className="flex gap-2">
-                <button className="btn-primary" disabled={acctLoading} onClick={saveProfileChanges}>{acctLoading ? 'Saving…' : 'Save'}</button>
-                <button className="btn-ghost" onClick={() => setEditOpen(false)}>Cancel</button>
+                <button className="btn-primary" disabled={acctLoading} onClick={saveProfileChanges}>
+                  {acctLoading ? "Saving…" : "Save"}
+                </button>
+                <button className="btn-ghost" onClick={() => setEditOpen(false)}>
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
@@ -957,14 +1061,23 @@ useEffect(() => {
       {/* ===== MODAL: CHANGE EMAIL ===== */}
       {emailOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setEmailOpen(false)}>
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="w-full max-w-md rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">Change email</div>
                 <h3 className="mt-2 text-xl font-extrabold text-slate-900">Update your login email</h3>
               </div>
 
-              <button type="button" className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50" onClick={() => setEmailOpen(false)}>Close</button>
+              <button
+                type="button"
+                className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                onClick={() => setEmailOpen(false)}
+              >
+                Close
+              </button>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -981,8 +1094,12 @@ useEffect(() => {
               </div>
 
               <div className="flex gap-2">
-                <button className="btn-primary" disabled={acctLoading} onClick={submitEmailChange}>{acctLoading ? 'Saving…' : 'Change email'}</button>
-                <button className="btn-ghost" onClick={() => setEmailOpen(false)}>Cancel</button>
+                <button className="btn-primary" disabled={acctLoading} onClick={submitEmailChange}>
+                  {acctLoading ? "Saving…" : "Change email"}
+                </button>
+                <button className="btn-ghost" onClick={() => setEmailOpen(false)}>
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
@@ -992,14 +1109,23 @@ useEffect(() => {
       {/* ===== MODAL: CHANGE PASSWORD ===== */}
       {passOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setPassOpen(false)}>
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="w-full max-w-md rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">Change password</div>
                 <h3 className="mt-2 text-xl font-extrabold text-slate-900">Update your password</h3>
               </div>
 
-              <button type="button" className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50" onClick={() => setPassOpen(false)}>Close</button>
+              <button
+                type="button"
+                className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                onClick={() => setPassOpen(false)}
+              >
+                Close
+              </button>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -1016,18 +1142,25 @@ useEffect(() => {
               </div>
 
               <div className="flex gap-2">
-                <button className="btn-primary" disabled={acctLoading} onClick={submitPasswordChange}>{acctLoading ? 'Saving…' : 'Change password'}</button>
-                <button className="btn-ghost" onClick={() => setPassOpen(false)}>Cancel</button>
+                <button className="btn-primary" disabled={acctLoading} onClick={submitPasswordChange}>
+                  {acctLoading ? "Saving…" : "Change password"}
+                </button>
+                <button className="btn-ghost" onClick={() => setPassOpen(false)}>
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ===== MODAL 2: USED COINS DETAILS (Used card Details) ===== */}
+      {/* ===== MODAL 2: USED COINS DETAILS ===== */}
       {useOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setUseOpen(false)}>
-          <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">Used Coins</div>
@@ -1049,14 +1182,10 @@ useEffect(() => {
                 <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3 text-sm text-slate-700/80">Loading usage history…</div>
               )}
 
-              {!useLoading && useErr && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{useErr}</div>
-              )}
+              {!useLoading && useErr && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{useErr}</div>}
 
               {!useLoading && !useErr && usedHistory.length === 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3 text-sm text-slate-700/80">
-                  No usage yet.
-                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-3 text-sm text-slate-700/80">No usage yet.</div>
               )}
 
               {!useLoading && !useErr && usedHistory.length > 0 && (
@@ -1075,8 +1204,7 @@ useEffect(() => {
                           </div>
 
                           <div className="mt-1 text-sm text-slate-700/80">
-                            <span className="font-semibold text-slate-900">{story}</span>
-                            {" • "}
+                            <span className="font-semibold text-slate-900">{story}</span> {" • "}
                             <span className="font-semibold text-slate-900">{chap}</span>
                             {h.note ? (
                               <>

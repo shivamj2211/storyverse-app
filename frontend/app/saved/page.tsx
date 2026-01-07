@@ -188,7 +188,7 @@ export default function SavedPage() {
           {stories.map((story) => (
             <section key={story.id} className="parchment-card">
               <div className="flex flex-wrap items-start justify-between gap-4 relative">
-                <div className="min-w-[240px] flex-1">
+                <div className="min-w-0 w-full flex-1 sm:min-w-[240px]">
                   <div className="flex items-start justify-between gap-3">
                     <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 leading-snug">
                       <Link

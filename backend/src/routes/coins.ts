@@ -1,15 +1,17 @@
 import { Router } from "express";
 import { query } from "../db";
-import { requireAuth } from "../middlewares/auth"; // ✅ use SAME auth middleware as other routes
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router = Router();
 
 /**
  * GET /api/coins/summary
- * -> { available, used }
+ * Returns:
+ *  - available: current wallet coins (from users.coins)
+ *  - used: total redeemed coins (sum of ABS(redeem))
  */
 router.get("/summary", requireAuth, async (req, res) => {
-  const userId = req.user!.id;
+  const userId = req.user.id;
 
   const userQ = await query<{ coins: number }>(
     `SELECT coins FROM users WHERE id=$1`,
@@ -29,56 +31,50 @@ router.get("/summary", requireAuth, async (req, res) => {
 });
 
 /**
- * GET /api/coins/history?type=earn|redeem|all
- * - earn => shows earned-like entries
- * - redeem => shows redemptions
- * - all => everything
+ * GET /api/coins/history?type=earn|redeem|adjust
+ * Returns both:
+ *  - items: [...]   ✅ what your new frontend expects
+ *  - history: [...] ✅ backward compatible (if any old UI uses it)
  */
 router.get("/history", requireAuth, async (req, res) => {
-  const userId = req.user!.id;
-  const type = String(req.query.type || "all").toLowerCase();
+  const userId = req.user.id;
 
-  // ✅ what counts as "earned" in your product
-  // If your coinEngine uses types like 'signup', 'chapter_rate', 'chapter_complete', 'adjust'
-  // they should still appear under Earned tab.
-  const earnTypes = ["earn", "signup", "chapter_rate", "chapter_complete", "adjust", "reward", "credit"];
+  const type = String(req.query.type || "").trim(); // earn | redeem | adjust | empty
+  const validTypes = new Set(["earn", "redeem", "adjust"]);
 
-  let whereSql = `WHERE user_id=$1`;
   const params: any[] = [userId];
+  let typeSql = "";
 
-  if (type === "redeem") {
-    whereSql += ` AND type='redeem'`;
-  } else if (type === "earn") {
-    // include multiple earned-like types + positive coins safeguard
-    whereSql += ` AND (type = ANY($2) OR coins > 0)`;
-    params.push(earnTypes);
-  } else if (type !== "all") {
-    // if some specific type passed, filter it directly
-    whereSql += ` AND type=$2`;
+  if (type && validTypes.has(type)) {
     params.push(type);
+    typeSql = `AND type = $2`;
   }
 
   const q = await query<any>(
     `SELECT id, type, coins, created_at, meta
      FROM coin_transactions
-     ${whereSql}
+     WHERE user_id=$1 ${typeSql}
      ORDER BY created_at DESC
      LIMIT 200`,
     params
   );
 
+  const mapped = q.rows.map((r: any) => ({
+    id: r.id,
+    type: r.type,
+    coins: Number(r.coins),
+    created_at: r.created_at,
+
+    // Support both key styles in meta (old/new)
+    story_title: r.meta?.story_title ?? r.meta?.storyTitle ?? null,
+    chapter_number: r.meta?.chapter_number ?? r.meta?.chapterNumber ?? null,
+    note: r.meta?.note ?? null,
+  }));
+
+  // ✅ return BOTH keys so nothing breaks anywhere
   res.json({
-    history: q.rows.map((r: any) => ({
-      id: r.id,
-      type: r.type,
-      coins: Number(r.coins),
-      created_at: r.created_at,
-      // support both old + new meta keys
-      story_id: r.meta?.story_id ?? null,
-      story_title: r.meta?.story_title ?? null,
-      chapter_number: r.meta?.chapter_number ?? null,
-      reason: r.meta?.reason ?? null,
-    })),
+    items: mapped,   // new
+    history: mapped, // old compatibility
   });
 });
 

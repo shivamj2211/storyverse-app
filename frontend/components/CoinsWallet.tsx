@@ -427,19 +427,19 @@ export default function CoinsWallet({
             <div className="rounded-2xl border border-slate-200 bg-white/70 p-3">
               <div className="text-sm font-semibold text-slate-900">⭐ Rate a journey</div>
               <div className="mt-1 text-[12px] text-slate-700/70">Earn coins after rating</div>
-              <div className="mt-2 text-lg font-extrabold text-slate-900">+5 🪙</div>
+              <div className="mt-2 text-lg font-extrabold text-slate-900">+2 🪙</div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white/70 p-3">
               <div className="text-sm font-semibold text-slate-900">🏁 Complete a story</div>
               <div className="mt-1 text-[12px] text-slate-700/70">Finish all chapters</div>
-              <div className="mt-2 text-lg font-extrabold text-slate-900">+3 🪙</div>
+              <div className="mt-2 text-lg font-extrabold text-slate-900">+10 🪙</div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white/70 p-3">
               <div className="text-sm font-semibold text-slate-900">🔁 Replay (first time)</div>
               <div className="mt-1 text-[12px] text-slate-700/70">Encourage re-reading</div>
-              <div className="mt-2 text-lg font-extrabold text-slate-900">+2 🪙</div>
+              <div className="mt-2 text-lg font-extrabold text-slate-900">+50 🪙</div>
             </div>
           </div>
 

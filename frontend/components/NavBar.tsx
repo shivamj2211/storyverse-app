@@ -9,6 +9,7 @@ interface User {
   id: string;
   email?: string;
   phone?: string;
+  coins?: number;
   is_admin: boolean;
   is_premium: boolean;
 }
@@ -29,7 +30,7 @@ function initialsFromEmail(email?: string) {
   return (first + second).toUpperCase();
 }
 
-type NavItem = { href: string; label: string; authOnly?: boolean; premiumOnly?: boolean };
+type NavItem = { href: string; label: string; authOnly?: boolean };
 
 export default function NavBar() {
   const pathname = usePathname();
@@ -101,11 +102,13 @@ export default function NavBar() {
 
   const name = useMemo(() => displayNameFromEmail(user?.email), [user?.email]);
   const initials = useMemo(() => initialsFromEmail(user?.email), [user?.email]);
+  const coins = Number(user?.coins ?? 0);
 
+  // ✅ Navbar items (Library included)
   const navItems: NavItem[] = useMemo(
     () => [
       { href: "/stories", label: "Stories" },
-      { href: "/library", label: "Continue Reading", authOnly: true },
+      { href: "/library", label: "Library", authOnly: true },
       { href: "/saved", label: "Saved", authOnly: true },
     ],
     []
@@ -122,7 +125,7 @@ export default function NavBar() {
       <Link
         href={href}
         className={[
-          "px-3 py-2 rounded-full text-sm transition",
+          "px-3 py-2 rounded-full text-sm transition whitespace-nowrap",
           active
             ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
             : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
@@ -135,15 +138,13 @@ export default function NavBar() {
 
   return (
     <header className="sticky top-0 z-50">
-      {/* Glass / soothing header */}
       <div className="backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/95 border-b border-slate-200">
         <nav className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="h-16 flex items-center justify-between gap-3">
+          <div className="h-16 flex items-center justify-between gap-2">
             {/* Left: Brand + main links */}
-            <div className="flex items-center gap-3">
-              <Link href="/" className="flex items-center gap-2 group">
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
-                  {/* simple book icon (no dependency) */}
+            <div className="flex items-center gap-3 min-w-0">
+              <Link href="/" className="flex items-center gap-2 group min-w-0">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                     <path
                       d="M6 4h10a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2V6a2 2 0 0 1 2-2Z"
@@ -159,12 +160,11 @@ export default function NavBar() {
                     />
                   </svg>
                 </span>
-                <div className="leading-tight">
-                  <div className="font-semibold text-slate-900 group-hover:text-slate-950">
+
+                <div className="leading-tight min-w-0">
+                  <div className="font-semibold text-slate-900 group-hover:text-slate-950 truncate">
                     Storyverse
                   </div>
-                  
-
                   <div className="text-[11px] text-slate-500 -mt-0.5 hidden sm:block">
                     Read • Choose • Continue
                   </div>
@@ -182,13 +182,13 @@ export default function NavBar() {
             </div>
 
             {/* Right: actions */}
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               {/* Premium CTA */}
               {!loading && (
                 <Link
                   href="/premium"
                   className={[
-                    "hidden sm:inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition",
+                    "hidden sm:inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition whitespace-nowrap",
                     user?.is_premium
                       ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
                       : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm",
@@ -227,12 +227,10 @@ export default function NavBar() {
                       Hi, <span className="font-semibold text-slate-900">{name}</span>
                     </span>
 
-                    {/* Avatar */}
                     <span className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 inline-flex items-center justify-center font-semibold">
                       {initials}
                     </span>
 
-                    {/* caret */}
                     <svg
                       width="16"
                       height="16"
@@ -252,25 +250,48 @@ export default function NavBar() {
 
                   {/* Dropdown */}
                   {menuOpen && (
-                    <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                    <div className="absolute right-0 mt-2 w-60 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
                       <div className="px-4 py-3 border-b border-slate-100">
                         <div className="text-sm font-semibold text-slate-900">{name}</div>
-                        <div className="text-xs text-slate-500 truncate">{user.email || "Signed in"}</div>
+                        <div className="text-xs text-slate-500 truncate">
+                          {user.email || "Signed in"}
+                        </div>
+
+                        {/* ✅ Coins inside opened user menu */}
+                        <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 px-3 py-1 text-xs font-semibold">
+                          🪙 {coins} Coins
+                        </div>
                       </div>
 
                       <div className="p-2">
+                        <Link
+                          href="/library"
+                          className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                          Library
+                        </Link>
+
+                        <Link
+                          href="/wallet"
+                          className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                          Wallet
+                        </Link>
+
                         <Link
                           href="/profile"
                           className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
                         >
                           Profile
                         </Link>
+
                         <Link
                           href="/premium"
                           className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
                         >
                           Premium
                         </Link>
+
                         {user.is_admin && (
                           <Link
                             href="/admin"
@@ -279,6 +300,7 @@ export default function NavBar() {
                             🔧 Admin Dashboard
                           </Link>
                         )}
+
                         <button
                           onClick={handleLogout}
                           className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50"
@@ -293,17 +315,16 @@ export default function NavBar() {
                 <div className="hidden sm:flex items-center gap-2">
                   <Link
                     href="/login"
-                    className="px-4 py-2 rounded-full text-sm   !bg-slate-200 !text-slate-700  !hover:bg-slate-50 transition"
+                    className="px-4 py-2 rounded-full text-sm !bg-slate-200 !text-slate-700 hover:!bg-slate-100 transition whitespace-nowrap"
                   >
                     Login
                   </Link>
                   <Link
                     href="/signup"
-                    className="px-4 py-2 rounded-full text-sm font-medium !bg-slate-900 !text-white hover:!text-white hover:bg-slate-950 transition shadow-sm"
+                    className="px-4 py-2 rounded-full text-sm font-medium !bg-slate-900 !text-white hover:!text-white hover:bg-slate-950 transition shadow-sm whitespace-nowrap"
                   >
                     Sign up
                   </Link>
-
                 </div>
               )}
 
@@ -340,24 +361,41 @@ export default function NavBar() {
 
                   {user && (
                     <>
+                      {/* ✅ coins shown on mobile menu too */}
+                      <div className="px-3 py-2">
+                        <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 px-3 py-1 text-xs font-semibold">
+                          🪙 {coins} Coins
+                        </div>
+                      </div>
+
                       <Link
                         href="/library"
                         className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
                       >
-                        Continue Reading
+                        Library
                       </Link>
+
                       <Link
                         href="/saved"
                         className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
                       >
                         Saved
                       </Link>
+
+                      <Link
+                        href="/wallet"
+                        className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        Wallet
+                      </Link>
+
                       <Link
                         href="/profile"
                         className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
                       >
                         Profile
                       </Link>
+
                       <Link
                         href="/premium"
                         className={[
@@ -367,6 +405,7 @@ export default function NavBar() {
                       >
                         {user.is_premium ? "Premium Active" : "Go Premium"}
                       </Link>
+
                       {user.is_admin && (
                         <Link
                           href="/admin"
@@ -375,6 +414,7 @@ export default function NavBar() {
                           🔧 Admin Dashboard
                         </Link>
                       )}
+
                       <button
                         onClick={handleLogout}
                         className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50"
@@ -388,14 +428,13 @@ export default function NavBar() {
                     <div className="grid grid-cols-2 gap-2 p-2">
                       <Link
                         href="/login"
-                        className="text-center px-4 py-2 rounded-xl text-sm text-slate-700 bg-slate-50 hover:bg-slate-100 transition"
+                        className="text-center px-4 py-2 rounded-xl text-sm text-slate-700 bg-slate-50 hover:bg-slate-100 transition whitespace-nowrap"
                       >
                         Login
                       </Link>
                       <Link
                         href="/signup"
-                        className="text-center px-4 py-2 rounded-xl text-sm font-medium !bg-slate-900 !text-white hover:!text-white hover:bg-slate-950 transition"
-
+                        className="text-center px-4 py-2 rounded-xl text-sm font-medium !bg-slate-900 !text-white hover:!text-white hover:bg-slate-950 transition whitespace-nowrap"
                       >
                         Sign up
                       </Link>
@@ -407,7 +446,6 @@ export default function NavBar() {
           )}
         </nav>
       </div>
-      
     </header>
   );
 }

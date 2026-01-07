@@ -1,6 +1,7 @@
 import React from "react";
 import "./globals.css";
 import NavBar from "../components/NavBar";
+import Footer from "../components/Footer";
 import { AlertProvider } from "../components/AlertProvider";
 
 export const metadata = {
@@ -11,7 +12,7 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className="min-h-screen bg-white text-black dark:bg-black dark:text-white">
         <AlertProvider>
           <NavBar />
           <main
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           >
             {children}
           </main>
+          <Footer />
         </AlertProvider>
       </body>
     </html>
