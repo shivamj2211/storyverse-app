@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import bodyParser from "body-parser";
-
+import { query } from "./db"; 
 import authRoutes from "./routes/auth";
 import storiesRoutes from "./routes/stories";
 import runsRoutes from "./routes/runs";
@@ -72,6 +72,25 @@ app.options("*", corsMiddleware);
 
 // IMPORTANT for express-rate-limit behind proxies (Vercel/Render/Railway/ngrok)
 app.set("trust proxy", 1);
+
+
+app.get("/api/health", async (req, res) => {
+  try {
+    await query("SELECT 1 as ok");
+    return res.json({
+      ok: true,
+      db: "ok",
+      time: new Date().toISOString(),
+    });
+  } catch (e: any) {
+    return res.status(500).json({
+      ok: false,
+      db: "down",
+      error: e?.message || "db error",
+      time: new Date().toISOString(),
+    });
+  }
+});
 
 // Routes
 app.use("/api/auth", authRoutes);
