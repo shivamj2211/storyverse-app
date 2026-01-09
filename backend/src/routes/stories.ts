@@ -174,9 +174,12 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 /** POST /api/stories/:id/start (unchanged from your version) */
+/** POST /api/stories/:id/start  (RESUME by default, restart only when ?restart=1) */
 router.post("/:id/start", requireAuth, async (req: Request, res: Response) => {
   const storyId = req.params.id;
   const user = (req as any).user!;
+  const restart = String(req.query.restart || "") === "1"; // ✅ explicit restart
+
   try {
     const versionRes = await query(
       "SELECT id FROM story_versions WHERE story_id=$1 AND is_published=true ORDER BY published_at DESC LIMIT 1",
@@ -187,16 +190,18 @@ router.post("/:id/start", requireAuth, async (req: Request, res: Response) => {
     }
     const versionId = versionRes.rows[0].id;
 
-    if (!user.is_premium) {
+    // ✅ ALWAYS try to resume latest run (premium + free)
+    if (!restart) {
       const existing = await query(
         "SELECT id FROM story_runs WHERE user_id=$1 AND story_id=$2 ORDER BY started_at DESC LIMIT 1",
         [user.id, storyId]
       );
       if (existing.rows.length) {
-        return res.json({ runId: existing.rows[0].id });
+        return res.json({ runId: existing.rows[0].id, resumed: true });
       }
     }
 
+    // Create fresh run only when restart=1 or no existing run
     const startNodeRes = await query(
       "SELECT id FROM story_nodes WHERE story_version_id=$1 AND is_start=true LIMIT 1",
       [versionId]
@@ -204,7 +209,6 @@ router.post("/:id/start", requireAuth, async (req: Request, res: Response) => {
     if (!startNodeRes.rows.length) {
       return res.status(500).json({ error: "No start node for version" });
     }
-
     const startNodeId = startNodeRes.rows[0].id;
 
     const runRes = await query(
@@ -212,11 +216,27 @@ router.post("/:id/start", requireAuth, async (req: Request, res: Response) => {
       [user.id, versionId, storyId, startNodeId]
     );
 
-    return res.json({ runId: runRes.rows[0].id });
+    const newRunId = runRes.rows[0].id;
+
+    // ✅ METHOD 1: Delete old runs’ reading_state for this story (keep only latest run)
+    await query(
+      `
+      delete from reading_state rs
+      using story_runs sr
+      where rs.run_id = sr.id
+        and rs.user_id = $1
+        and sr.story_id = $2
+        and rs.run_id <> $3
+      `,
+      [user.id, storyId, newRunId]
+    );
+
+    return res.json({ runId: newRunId, resumed: false });
   } catch (err: any) {
     console.error("❌ /api/stories/:id/start error:", err?.message || err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 export default router;

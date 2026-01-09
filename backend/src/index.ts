@@ -12,6 +12,16 @@ import premiumRoutes from "./routes/premium";
 import adminRoutes from "./routes/admin";
 import genresRouter from "./routes/genres";
 import coinsRouter from "./routes/coins";
+import exploreRoutes from "./routes/explore";
+import exploreMoreRoutes from "./routes/exploreMore";
+import writingsRoutes from "./routes/writings";
+import adminWritingsRoutes from "./routes/adminWritings";
+import adminWritingsList from "./routes/adminWritingsList";
+import writingViews from "./routes/writingViews";
+import writingLikes from "./routes/writingLikes";
+import writingsRead from "./routes/writingsRead";
+import exploreEditors from "./routes/exploreEditors";
+import adminCreateWriting from "./routes/adminCreateWriting";
 
 dotenv.config();
 
@@ -60,6 +70,9 @@ app.use(corsMiddleware);
 // ✅ handle preflight for all
 app.options("*", corsMiddleware);
 
+// IMPORTANT for express-rate-limit behind proxies (Vercel/Render/Railway/ngrok)
+app.set("trust proxy", 1);
+
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/genres", genresRouter);
@@ -70,6 +83,16 @@ app.use("/api/ratings", ratingsRoutes);
 app.use("/api/premium", premiumRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/coins", coinsRouter); // ✅ moved here
+app.use("/api", exploreRoutes);
+app.use("/api", exploreMoreRoutes);
+app.use("/api", writingsRoutes);
+app.use("/api", adminWritingsRoutes);
+app.use("/api", adminWritingsList);
+app.use("/api", writingViews);
+app.use("/api", writingLikes);
+app.use("/api", writingsRead);
+app.use("/api", exploreEditors);
+app.use("/api", adminCreateWriting);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`✅ Backend running on port ${PORT}`));

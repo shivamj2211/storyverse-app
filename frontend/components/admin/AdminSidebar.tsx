@@ -9,11 +9,14 @@ const nav = [
   { href: "/admin/stories", label: "Stories" },
   { href: "/admin/stories/upload", label: "Upload JSON" },
 
-  // Next we will create these pages
   { href: "/admin/genres", label: "Genres" },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/coins", label: "Coins" },
   { href: "/admin/rewards", label: "Reward Rules" },
+
+  // ✅ Explore admin tools
+  { href: "/admin/Writings", label: "Explore Moderation" },
+  { href: "/admin/Writings/new", label: "Add Explore Content" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -33,7 +36,14 @@ export default function AdminSidebar() {
         </div>
       </div>
 
-      <div className="mt-3 space-y-1">
+      {/* ✅ Explore section label (only UI separator) */}
+      <div className="mt-4 px-2">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          Explore
+        </div>
+      </div>
+
+      <div className="mt-2 space-y-1">
         {nav.map((item) => {
           const active = isActive(pathname || "", item.href);
           return (
@@ -53,10 +63,17 @@ export default function AdminSidebar() {
         })}
       </div>
 
-      <div className="mt-4 pt-4 border-t px-2">
+      <div className="mt-4 pt-4 border-t px-2 space-y-2">
+        <Link
+          href="/explore"
+          className="block !text-sm !text-gray-600 hover:!text-gray-900"
+        >
+          ↗ Open Explore
+        </Link>
+
         <Link
           href="/"
-          className="!text-sm !text-gray-600 hover:!text-gray-900"
+          className="block !text-sm !text-gray-600 hover:!text-gray-900"
         >
           ← Back to app
         </Link>

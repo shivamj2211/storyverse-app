@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import JourneyStepper from "../../../components/JourneyStepper";
 import { api, authHeaders } from "../..//lib/api";
+import NovelPager from "../../../components/NovelPager";
 
 type Choice = {
   genreKey: string;
@@ -577,118 +578,132 @@ export default function ReadRunPage() {
   }
 
   // Normal reading view
-  return (
-    <main className="reading-page">
-      <div className="reading-shell space-y-6">
-        <JourneyStepper totalSteps={totalSteps} currentStep={currentStep} picked={journey?.picked ?? []} />
+  
+return (
+  <main className="reading-page">
+    <div className="reading-shell space-y-6">
+      <JourneyStepper totalSteps={totalSteps} currentStep={currentStep} picked={journey?.picked ?? []} />
 
-        <article className="reading-card">
-          <header>
-            <h1 className="reading-title">{current?.node.title ?? "Chapter"}</h1>
-            <div className="reading-meta">
-              Chapter {current?.node.stepNo ?? "—"} of {totalSteps} · Coins <b>{me?.coins ?? "—"}</b>{" "}
-              <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
-                {me?.plan?.toUpperCase?.() ?? "FREE"}
-              </span>
-            </div>
-          </header>
+      <article className="reading-card">
+        <header>
+          <h1 className="reading-title">{current?.node.title ?? "Chapter"}</h1>
+          <div className="reading-meta">
+            Chapter {current?.node.stepNo ?? "—"} of {totalSteps} · Coins <b>{me?.coins ?? "—"}</b>{" "}
+            <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
+              {me?.plan?.toUpperCase?.() ?? "FREE"}
+            </span>
+          </div>
+        </header>
 
-          <section className="reading-content">{current?.node.content ?? ""}</section>
+        {/* ✅ NOVEL VIEW */}
+        <section className="reading-content">
+  <NovelPager
+    text={current?.node.content ?? ""}
+    runId={runId}
+    nodeId={current?.node.id ?? ""}
+  />
+</section>
 
-          <div className="reading-divider" />
 
-          {/* ✅ Rating section (hidden for first chapter) */}
-          {!current?.node.isStart && (
-            <section className="reading-section rating-box rating-glow">
-              <div className="rating-header">
-                <div>
-                  <div className="text-base font-extrabold text-slate-900">Leave your mark</div>
-                  <div className="text-xs text-slate-600 mt-1">
-                    Required before choosing the next genre.
-                  </div>
+        <div className="reading-divider" />
+
+        {/* ✅ Rating section (hidden for first chapter) */}
+        {!current?.node.isStart && (
+          <section className="reading-section rating-box rating-glow">
+            <div className="rating-header">
+              <div>
+                <div className="text-base font-extrabold text-slate-900">Leave your mark</div>
+                <div className="text-xs text-slate-600 mt-1">
+                  Required before choosing the next genre.
                 </div>
-
-                {ratingSubmitted ? (
-                  <span className="rating-stamp">
-                    ✓ Rated
-                    {coinsAwardedLast ? (
-                      <span>
-                        • <b>+{coinsAwardedLast}</b> coins
-                      </span>
-                    ) : null}
-                  </span>
-                ) : (
-                  <span className="story-chip">RATE 1–5</span>
-                )}
               </div>
 
-              <div className="rating-scale">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    className={`rating-pill ${rating === n ? "rating-pill-selected" : ""}`}
-                    onClick={() => setRating(n)}
-                    type="button"
-                    aria-pressed={rating === n}
-                  >
-                    {n}
-                  </button>
-                ))}
-
-                <button
-                  className="rating-submit"
-                  onClick={submitRating}
-                  disabled={ratingSubmitted}
-                  type="button"
-                >
-                  {ratingSubmitted ? "Submitted" : "Submit Rating"}
-                </button>
-              </div>
-
-              {!ratingSubmitted && (
-                <div className="rating-helper">
-                  Note: Rating is required before you can continue.
-                </div>
+              {ratingSubmitted ? (
+                <span className="rating-stamp">
+                  ✓ Rated
+                  {coinsAwardedLast ? (
+                    <span>
+                      • <b>+{coinsAwardedLast}</b> coins
+                    </span>
+                  ) : null}
+                </span>
+              ) : (
+                <span className="story-chip">RATE 1–5</span>
               )}
-            </section>
-          )}
+            </div>
 
-
-          <div className="reading-divider" />
-
-          <section className="reading-section">
-            {current?.node.stepNo === 5 ? (
-              <div className="rating-box">
-                <h2 className="text-lg font-bold text-slate-900">Final Chapter</h2>
-                <p className="mt-1 text-slate-600">Rate this chapter and finish your journey.</p>
-
-                <button className="mt-5 btn-wax" onClick={finishJourney} disabled={finishing} type="button">
-                  {finishing ? "Finishing…" : "Finish Journey"}
+            <div className="rating-scale">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  className={`rating-pill ${rating === n ? "rating-pill-selected" : ""}`}
+                  onClick={() => setRating(n)}
+                  type="button"
+                  aria-pressed={rating === n}
+                >
+                  {n}
                 </button>
-              </div>
-            ) : (
-              <div className="reading-section">
-                <div>
-                  <div className="genre-section-title">Choose the path of the story</div>
-                  <div className="genre-section-sub">This decision will permanently shape your journey.</div>
-                </div>
+              ))}
 
-                <div className="genre-grid">
-                  {(current?.choices ?? []).map((c) => (
-                    <button key={c.genreKey} className="genre-card text-left" onClick={() => chooseGenre(c.genreKey)} type="button">
-                      <div className="genre-name">{c.genreKey}</div>
-                      <div className="genre-rating">
-                        Avg reader rating: <b>{c.avgRating ?? "—"}</b>
-                      </div>
-                      <div className="genre-arrow">→</div>
-                    </button>
-                  ))}
-                </div>
+              <button
+                className="rating-submit"
+                onClick={submitRating}
+                disabled={ratingSubmitted}
+                type="button"
+              >
+                {ratingSubmitted ? "Submitted" : "Submit Rating"}
+              </button>
+            </div>
+
+            {!ratingSubmitted && (
+              <div className="rating-helper">
+                Note: Rating is required before you can continue.
               </div>
             )}
           </section>
-        </article>
-      </div>
-    </main>
-  );
+        )}
+
+        <div className="reading-divider" />
+
+        <section className="reading-section">
+          {current?.node.stepNo === 5 ? (
+            <div className="rating-box">
+              <h2 className="text-lg font-bold text-slate-900">Final Chapter</h2>
+              <p className="mt-1 text-slate-600">Rate this chapter and finish your journey.</p>
+
+              <button className="mt-5 btn-wax" onClick={finishJourney} disabled={finishing} type="button">
+                {finishing ? "Finishing…" : "Finish Journey"}
+              </button>
+            </div>
+          ) : (
+            <div className="reading-section">
+              <div>
+                <div className="genre-section-title">Choose the path of the story</div>
+                <div className="genre-section-sub">This decision will permanently shape your journey.</div>
+              </div>
+
+              <div className="genre-grid">
+                {(current?.choices ?? []).map((c) => (
+                  <button
+                    key={c.genreKey}
+                    className="genre-card text-left"
+                    onClick={() => chooseGenre(c.genreKey)}
+                    type="button"
+                  >
+                    <div className="genre-name">{c.genreKey}</div>
+                    <div className="genre-rating">
+                      Avg reader rating: <b>{c.avgRating ?? "—"}</b>
+                    </div>
+                    <div className="genre-arrow">→</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      </article>
+    </div>
+  </main>
+);
+
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { api, authHeaders, getToken } from "../app/lib/api";
+import ModesMenu from "./ModesMenu";
 
 interface User {
   id: string;
@@ -104,7 +105,6 @@ export default function NavBar() {
   const initials = useMemo(() => initialsFromEmail(user?.email), [user?.email]);
   const coins = Number(user?.coins ?? 0);
 
-  // ✅ Navbar items (Library included)
   const navItems: NavItem[] = useMemo(
     () => [
       { href: "/stories", label: "Stories" },
@@ -127,8 +127,8 @@ export default function NavBar() {
         className={[
           "px-3 py-2 rounded-full text-sm transition whitespace-nowrap",
           active
-            ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
-            : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
+            ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-500/25"
+            : "text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-zinc-800",
         ].join(" ")}
       >
         {label}
@@ -138,7 +138,14 @@ export default function NavBar() {
 
   return (
     <header className="sticky top-0 z-50">
-      <div className="backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/95 border-b border-slate-200">
+      <div
+        className={[
+          "backdrop-blur",
+          "supports-[backdrop-filter]:bg-white/70 bg-white/95",
+          "dark:supports-[backdrop-filter]:bg-zinc-900/70 dark:bg-zinc-900",
+          "border-b border-slate-200 dark:border-zinc-700",
+        ].join(" ")}
+      >
         <nav className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="h-16 flex items-center justify-between gap-2">
             {/* Left: Brand + main links */}
@@ -162,10 +169,10 @@ export default function NavBar() {
                 </span>
 
                 <div className="leading-tight min-w-0">
-                  <div className="font-semibold text-slate-900 group-hover:text-slate-950 truncate">
+                  <div className="font-semibold text-slate-900 dark:text-zinc-100 group-hover:text-slate-950 dark:group-hover:text-white truncate">
                     Storyverse
                   </div>
-                  <div className="text-[11px] text-slate-500 -mt-0.5 hidden sm:block">
+                  <div className="text-[11px] text-slate-500 dark:text-zinc-400 -mt-0.5 hidden sm:block">
                     Read • Choose • Continue
                   </div>
                 </div>
@@ -190,7 +197,7 @@ export default function NavBar() {
                   className={[
                     "hidden sm:inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition whitespace-nowrap",
                     user?.is_premium
-                      ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
+                      ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-500/25"
                       : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm",
                   ].join(" ")}
                 >
@@ -217,99 +224,95 @@ export default function NavBar() {
 
               {/* Auth area */}
               {loading ? null : user ? (
-                <div className="relative" ref={menuRef}>
-                  <button
-                    onClick={() => setMenuOpen((v) => !v)}
-                    className="inline-flex items-center gap-2 rounded-full px-2 py-1.5 hover:bg-slate-50 transition"
-                    aria-label="Open user menu"
-                  >
-                    <span className="hidden sm:inline text-sm text-slate-700">
-                      Hi, <span className="font-semibold text-slate-900">{name}</span>
-                    </span>
+                <div className="flex items-center gap-2">
+                  {/* Theme button */}
+                  <ModesMenu />
 
-                    <span className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 inline-flex items-center justify-center font-semibold">
-                      {initials}
-                    </span>
-
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      className="text-slate-500 hidden sm:block"
+                  <div className="relative" ref={menuRef}>
+                    <button
+                      onClick={() => setMenuOpen((v) => !v)}
+                      className="inline-flex items-center gap-2 rounded-full px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-800 transition"
+                      aria-label="Open user menu"
                     >
-                      <path
-                        d="M6 9l6 6 6-6"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
+                      <span className="hidden sm:inline text-sm text-slate-700 dark:text-zinc-200">
+                        Hi,{" "}
+                        <span className="font-semibold text-slate-900 dark:text-zinc-100">
+                          {name}
+                        </span>
+                      </span>
 
-                  {/* Dropdown */}
-                  {menuOpen && (
-                    <div className="absolute right-0 mt-2 w-60 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
-                      <div className="px-4 py-3 border-b border-slate-100">
-                        <div className="text-sm font-semibold text-slate-900">{name}</div>
-                        <div className="text-xs text-slate-500 truncate">
-                          {user.email || "Signed in"}
+                      <span className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-200 dark:ring-emerald-500/30 inline-flex items-center justify-center font-semibold">
+                        {initials}
+                      </span>
+
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        className="text-slate-500 dark:text-zinc-400 hidden sm:block"
+                      >
+                        <path
+                          d="M6 9l6 6 6-6"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+
+                    {/* Dropdown */}
+                    {menuOpen && (
+                      <div className="absolute right-0 mt-2 w-60 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg overflow-hidden">
+                        <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-700">
+                          <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                            {name}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
+                            {user.email || "Signed in"}
+                          </div>
+
+                          <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-500/25 px-3 py-1 text-xs font-semibold">
+                            🪙 {coins} Coins
+                          </div>
                         </div>
 
-                        {/* ✅ Coins inside opened user menu */}
-                        <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 px-3 py-1 text-xs font-semibold">
-                          🪙 {coins} Coins
-                        </div>
-                      </div>
+                        <div className="p-2">
+                          {[
+                            { href: "/library", label: "Library" },
+                            { href: "/wallet", label: "Wallet" },
+                            { href: "/profile", label: "Profile" },
+                            { href: "/premium", label: "Premium" },
+                          ].map((x) => (
+                            <Link
+                              key={x.href}
+                              href={x.href}
+                              className="block px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800"
+                            >
+                              {x.label}
+                            </Link>
+                          ))}
 
-                      <div className="p-2">
-                        <Link
-                          href="/library"
-                          className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
-                        >
-                          Library
-                        </Link>
+                          {user.is_admin && (
+                            <Link
+                              href="/admin"
+                              className="block px-3 py-2 rounded-xl text-sm text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-50 dark:hover:bg-amber-500/10 flex items-center gap-2"
+                            >
+                              🔧 Admin Dashboard
+                            </Link>
+                          )}
 
-                        <Link
-                          href="/wallet"
-                          className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
-                        >
-                          Wallet
-                        </Link>
-
-                        <Link
-                          href="/profile"
-                          className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
-                        >
-                          Profile
-                        </Link>
-
-                        <Link
-                          href="/premium"
-                          className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
-                        >
-                          Premium
-                        </Link>
-
-                        {user.is_admin && (
-                          <Link
-                            href="/admin"
-                            className="block px-3 py-2 rounded-xl text-sm text-amber-700 font-medium hover:bg-amber-50 flex items-center gap-2"
+                          <button
+                            onClick={handleLogout}
+                            className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
                           >
-                            🔧 Admin Dashboard
-                          </Link>
-                        )}
-
-                        <button
-                          onClick={handleLogout}
-                          className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50"
-                        >
-                          Logout
-                        </button>
+                            Logout
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="hidden sm:flex items-center gap-2">
@@ -330,7 +333,7 @@ export default function NavBar() {
 
               {/* Mobile hamburger */}
               <button
-                className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-xl hover:bg-slate-50 transition"
+                className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition"
                 onClick={() => setMobileOpen((v) => !v)}
                 aria-label="Open menu"
               >
@@ -349,58 +352,49 @@ export default function NavBar() {
           {/* Mobile menu panel */}
           {mobileOpen && (
             <div className="md:hidden pb-4">
-              <div className="mt-2 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="mt-2 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
                 <div className="p-2">
-                  {/* Always show Stories */}
+                  <div className="px-1 py-2">
+                    <ModesMenu />
+                  </div>
+
                   <Link
                     href="/stories"
-                    className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
+                    className="block px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800"
                   >
                     Stories
                   </Link>
 
                   {user && (
                     <>
-                      {/* ✅ coins shown on mobile menu too */}
                       <div className="px-3 py-2">
-                        <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 px-3 py-1 text-xs font-semibold">
+                        <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-500/25 px-3 py-1 text-xs font-semibold">
                           🪙 {coins} Coins
                         </div>
                       </div>
 
-                      <Link
-                        href="/library"
-                        className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
-                      >
-                        Library
-                      </Link>
-
-                      <Link
-                        href="/saved"
-                        className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
-                      >
-                        Saved
-                      </Link>
-
-                      <Link
-                        href="/wallet"
-                        className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
-                      >
-                        Wallet
-                      </Link>
-
-                      <Link
-                        href="/profile"
-                        className="block px-3 py-2 rounded-xl text-sm text-slate-700 hover:bg-slate-50"
-                      >
-                        Profile
-                      </Link>
+                      {[
+                        { href: "/library", label: "Library" },
+                        { href: "/saved", label: "Saved" },
+                        { href: "/wallet", label: "Wallet" },
+                        { href: "/profile", label: "Profile" },
+                      ].map((x) => (
+                        <Link
+                          key={x.href}
+                          href={x.href}
+                          className="block px-3 py-2 rounded-xl text-sm text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800"
+                        >
+                          {x.label}
+                        </Link>
+                      ))}
 
                       <Link
                         href="/premium"
                         className={[
                           "block px-3 py-2 rounded-xl text-sm font-medium",
-                          user.is_premium ? "text-emerald-800 bg-emerald-50" : "text-white bg-emerald-600",
+                          user.is_premium
+                            ? "text-emerald-800 bg-emerald-50 dark:text-emerald-200 dark:bg-emerald-500/15"
+                            : "text-white bg-emerald-600 hover:bg-emerald-700",
                         ].join(" ")}
                       >
                         {user.is_premium ? "Premium Active" : "Go Premium"}
@@ -409,7 +403,7 @@ export default function NavBar() {
                       {user.is_admin && (
                         <Link
                           href="/admin"
-                          className="block px-3 py-2 rounded-xl text-sm text-amber-700 font-medium hover:bg-amber-50"
+                          className="block px-3 py-2 rounded-xl text-sm text-amber-700 dark:text-amber-300 font-medium hover:bg-amber-50 dark:hover:bg-amber-500/10"
                         >
                           🔧 Admin Dashboard
                         </Link>
@@ -417,7 +411,7 @@ export default function NavBar() {
 
                       <button
                         onClick={handleLogout}
-                        className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50"
+                        className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
                       >
                         Logout
                       </button>
@@ -428,7 +422,7 @@ export default function NavBar() {
                     <div className="grid grid-cols-2 gap-2 p-2">
                       <Link
                         href="/login"
-                        className="text-center px-4 py-2 rounded-xl text-sm text-slate-700 bg-slate-50 hover:bg-slate-100 transition whitespace-nowrap"
+                        className="text-center px-4 py-2 rounded-xl text-sm text-slate-700 dark:text-zinc-200 bg-slate-50 dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 transition whitespace-nowrap"
                       >
                         Login
                       </Link>

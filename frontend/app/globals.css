@@ -1,13 +1,15 @@
 /* Global styles for Storyverse frontend */
 @import "tailwindcss";
 
-html, body {
+html,
+body {
   padding: 0;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  background-color: #f7f7f7;
-  color: #333;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  /* ✅ DO NOT force background/color here (Tailwind controls theme) */
+  background: transparent;
+  color: inherit;
 }
 
 a {
@@ -38,6 +40,7 @@ button {
   margin-bottom: 1rem;
   overflow-x: auto;
 }
+
 
 .step {
   width: 28px;
@@ -1970,3 +1973,218 @@ button {
   width: 100%;
   background: #fecaca;
 }
+
+/* --- Novel Pager (Book Feel + Controls) --- */
+.novel-wrap {
+  margin-top: 12px;
+}
+
+.novel-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.novel-pagecount {
+  font-size: 13px;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.novel-progress {
+  flex: 1;
+  min-width: 140px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+
+.dark .novel-progress {
+  background: rgba(255,255,255,0.12);
+}
+
+.novel-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(16,185,129,0.85);
+}
+
+.novel-tools {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.novel-iconbtn {
+  border-radius: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(255,255,255,0.7);
+  font-weight: 800;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.dark .novel-iconbtn {
+  border-color: rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: #e5e7eb;
+}
+
+.novel-frame {
+  position: relative;
+  height: min(72vh, 620px);
+  border-radius: 18px;
+  border: 1px solid rgba(0,0,0,0.12);
+
+  /* ✅ day paper */
+  background: #fbf6ea;
+
+  /* subtle shadow */
+  box-shadow: 0 12px 32px rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+
+/* ✅ Night reading: zinc paper (NOT pure black) */
+.dark .novel-frame {
+  background: #18181b; /* zinc-900-ish */
+  border-color: rgba(255,255,255,0.12);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+}
+
+.novel-page {
+  height: 100%;
+  padding: 22px 20px;
+  transform-origin: right center;
+  transition: transform 220ms ease, filter 220ms ease;
+  will-change: transform;
+}
+
+@media (min-width: 640px) {
+  .novel-page { padding: 28px 28px; }
+}
+
+.novel-text {
+  height: 100%;
+  overflow: hidden;
+  line-height: 1.75;
+  color: #1f2937;
+}
+
+.dark .novel-text {
+  color: #e5e7eb;
+}
+
+.novel-text p {
+  margin: 0 0 12px 0;
+}
+
+.novel-turn-next {
+  transform: perspective(1200px) rotateY(-10deg);
+  filter: brightness(0.98);
+}
+
+.novel-turn-prev {
+  transform: perspective(1200px) rotateY(10deg);
+  filter: brightness(0.98);
+}
+
+.novel-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.novel-btn {
+  border-radius: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(255,255,255,0.7);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.dark .novel-btn {
+  border-color: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #e5e7eb;
+}
+
+.novel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.novel-btn-primary {
+  background: rgba(16,185,129,0.9);
+  color: white;
+  border-color: rgba(16,185,129,0.9);
+}
+
+.novel-mid {
+  flex: 1;
+  min-width: 220px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.novel-hint {
+  font-size: 12px;
+  opacity: 0.75;
+  text-align: center;
+}
+
+.novel-goto {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.novel-goto-input {
+  width: 120px;
+  border-radius: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(255,255,255,0.7);
+  outline: none;
+  font-weight: 700;
+}
+
+.dark .novel-goto-input {
+  border-color: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #e5e7eb;
+}
+
+.novel-goto-btn {
+  border-radius: 12px;
+  padding: 9px 12px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(255,255,255,0.7);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dark .novel-goto-btn {
+  border-color: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #e5e7eb;
+}
+
+.novel-measure {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  line-height: 1.75;
+  white-space: nowrap;
+  visibility: hidden;
+}
+

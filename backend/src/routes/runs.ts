@@ -544,6 +544,61 @@ router.post("/:runId/finish", requireAuth, async (req: AuthRequest, res: Respons
   }
 });
 
+
+// ... existing routes
+// ✅ GET /api/runs/:runId/reading-state?nodeId=...
+router.get("/:runId/reading-state", requireAuth, async (req, res) => {
+  const userId = (req as any).user?.id;
+  const runId = req.params.runId;
+  const nodeId = String(req.query.nodeId || "");
+
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!nodeId) return res.status(400).json({ error: "nodeId is required" });
+
+  const q = `
+    select page_index, bookmark_page_index, font_px
+    from reading_state
+    where user_id=$1 and run_id=$2 and node_id=$3
+    limit 1
+  `;
+
+  const r = await query(q, [userId, runId, nodeId]);
+  return res.json({ state: r.rows[0] ?? null });
+});
+
+// ✅ POST /api/runs/:runId/reading-state
+router.post("/:runId/reading-state", requireAuth, async (req, res) => {
+  const userId = (req as any).user?.id;
+  const runId = req.params.runId;
+  const { nodeId, pageIndex, bookmarkPageIndex, fontPx } = req.body || {};
+
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!nodeId) return res.status(400).json({ error: "nodeId is required" });
+
+  const q = `
+    insert into reading_state (user_id, run_id, node_id, page_index, bookmark_page_index, font_px)
+    values ($1, $2, $3, $4, $5, $6)
+    on conflict (user_id, run_id, node_id)
+    do update set
+      page_index = excluded.page_index,
+      bookmark_page_index = excluded.bookmark_page_index,
+      font_px = excluded.font_px,
+      updated_at = now()
+    returning page_index, bookmark_page_index, font_px
+  `;
+
+  const r = await query(q, [
+    userId,
+    runId,
+    String(nodeId),
+    Number(pageIndex ?? 0),
+    bookmarkPageIndex === null || bookmarkPageIndex === undefined ? null : Number(bookmarkPageIndex),
+    fontPx === null || fontPx === undefined ? null : Number(fontPx),
+  ]);
+
+  return res.json({ ok: true, state: r.rows[0] });
+});
+
 // GET /api/runs/:runId/summary
 // final journey rating = AVG of all chapter ratings for that run
 router.get("/:runId/summary", requireAuth, async (req: AuthRequest, res: Response) => {

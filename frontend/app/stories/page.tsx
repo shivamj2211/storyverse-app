@@ -4,6 +4,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, authHeaders } from "..//lib/api";
+import StoryDetailsModal, {
+  type StoryDetails,
+} from "../../components/StoryDetailsModal"; // ✅ adjust if your path differs
 
 type Story = {
   id: string;
@@ -11,6 +14,14 @@ type Story = {
   summary: string;
   coverImageUrl: string | null;
   saved?: boolean;
+
+  // Optional fields (if your API provides them later, modal will show them)
+  avgRating?: number | null;
+  ratingsCount?: number | null;
+  totalSteps?: number | null;
+  updatedAt?: string | null;
+  authorName?: string | null;
+  genres?: { key: string; label: string }[];
 };
 
 type StoriesResponse = { stories: Story[] };
@@ -21,6 +32,10 @@ export default function StoriesPage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // ✅ Details modal state
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedStory, setSelectedStory] = useState<StoryDetails | null>(null);
 
   const token = useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -82,6 +97,11 @@ export default function StoriesPage() {
       setStories((prev) =>
         prev.map((s) => (s.id === storyId ? { ...s, saved: !saved } : s))
       );
+
+      // ✅ if modal is open for same story, keep it in sync
+      setSelectedStory((prev) =>
+        prev && prev.id === storyId ? { ...prev, saved: !saved } : prev
+      );
     } catch (e) {
       console.error(e);
       alert("Network error.");
@@ -104,7 +124,10 @@ export default function StoriesPage() {
         headers: { "Content-Type": "application/json", ...authHeaders() },
       });
 
-      const data = (await res.json().catch(() => ({}))) as { runId?: string; error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        runId?: string;
+        error?: string;
+      };
 
       if (!res.ok || !data.runId) {
         console.error(data);
@@ -120,6 +143,20 @@ export default function StoriesPage() {
       setBusyId(null);
     }
   }
+
+  // ✅ helper: map your Story -> StoryDetailsModal StoryDetails
+  const toDetails = (s: Story): StoryDetails => ({
+    id: s.id,
+    title: s.title,
+    summary: s.summary,
+    saved: Boolean(s.saved),
+    avgRating: s.avgRating ?? null,
+    ratingsCount: s.ratingsCount ?? null,
+    totalSteps: s.totalSteps ?? null,
+    updatedAt: s.updatedAt ?? null,
+    authorName: s.authorName ?? null,
+    genres: s.genres ?? [],
+  });
 
   return (
     <main className="parchment-page">
@@ -190,50 +227,47 @@ export default function StoriesPage() {
 
               <div className="p-6">
                 <div className="flex items-center justify-between gap-2">
-  <h2 className="min-w-0 truncate whitespace-nowrap text-lg font-extrabold leading-snug text-slate-900">
-    {s.title}
-    {/* optional meta example:
-    <span className="ml-1 font-normal text-slate-700/70">(5 Steps, 76 Branches)</span>
-    */}
-  </h2>
+                  <h2 className="min-w-0 truncate whitespace-nowrap text-lg font-extrabold leading-snug text-slate-900">
+                    {s.title}
+                  </h2>
 
-  <span
-    className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold tracking-wide text-emerald-700"
-  >
-    {s.saved ? "SAVED" : "NEW"}
-  </span>
-                  </div>
-
+                  <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold tracking-wide text-emerald-700">
+                    {s.saved ? "SAVED" : "NEW"}
+                  </span>
+                </div>
 
                 <p className="mt-3 text-sm text-slate-700/80 leading-relaxed line-clamp-3">
                   {s.summary}
                 </p>
 
                 <div className="story-actions flex w-full items-center gap-2 flex-nowrap">
-  <button
-    className="story-btn story-btn-primary flex-1 min-w-0 whitespace-nowrap !px-3 !py-2 text-xs sm:text-sm sm:!px-4"
-    onClick={() => startRun(s.id)}
-    disabled={busyId === s.id}
-  >
-    {busyId === s.id ? "Starting…" : "Read"}
-  </button>
+                  <button
+                    className="story-btn story-btn-primary flex-1 min-w-0 whitespace-nowrap !px-3 !py-2 text-xs sm:text-sm sm:!px-4"
+                    onClick={() => startRun(s.id)}
+                    disabled={busyId === s.id}
+                  >
+                    {busyId === s.id ? "Starting…" : "Read"}
+                  </button>
 
-  <button
-    className="story-btn flex-1 min-w-0 whitespace-nowrap !px-3 !py-2 text-xs sm:text-sm sm:!px-4"
-    onClick={() => toggleSave(s.id, s.saved)}
-    disabled={busyId === s.id}
-  >
-    {s.saved ? "Saved ✓" : "Save"}
-  </button>
+                  <button
+                    className="story-btn flex-1 min-w-0 whitespace-nowrap !px-3 !py-2 text-xs sm:text-sm sm:!px-4"
+                    onClick={() => toggleSave(s.id, s.saved)}
+                    disabled={busyId === s.id}
+                  >
+                    {s.saved ? "Saved ✓" : "Save"}
+                  </button>
 
-  <Link
-    href={`/stories/${s.id}`}
-    className="story-btn story-btn-ghost flex-1 min-w-0 whitespace-nowrap !px-3 !py-2 text-xs sm:text-sm sm:!px-4 inline-flex items-center justify-center"
-  >
-    Details
-  </Link>
-</div>
-
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedStory(toDetails(s));
+                      setDetailsOpen(true);
+                    }}
+                    className="story-btn story-btn-ghost flex-1 min-w-0 whitespace-nowrap !px-3 !py-2 text-xs sm:text-sm sm:!px-4 inline-flex items-center justify-center"
+                  >
+                    Details
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -243,6 +277,23 @@ export default function StoriesPage() {
           Tip: Save stories you love — your library will remember them.
         </div>
       </div>
+
+      {/* ✅ Details modal (ONE place only) */}
+      <StoryDetailsModal
+        open={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+        story={selectedStory}
+        allStories={stories.map(toDetails)}
+        readHref={(storyId) => `/stories/${storyId}`} // change if you want to continue via /read/runId
+        onToggleSave={async (storyId, nextSaved) => {
+          // Reuse your existing save toggle (uses current saved state)
+          const current = stories.find((x) => x.id === storyId)?.saved;
+          await toggleSave(storyId, current);
+
+          // After toggleSave updates state, also close modal if you want:
+          // setDetailsOpen(false);
+        }}
+      />
     </main>
   );
 }
