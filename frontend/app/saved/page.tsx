@@ -237,12 +237,7 @@ export default function SavedPage() {
                     Read
                   </button>
 
-                  <Link
-                    href={`/stories/${story.id}`}
-                    className="story-btn story-btn-ghost px-5 inline-flex items-center justify-center"
-                  >
-                    Details
-                  </Link>
+                  
 
                   <button
                     onClick={() => handleUnsave(story.id)}

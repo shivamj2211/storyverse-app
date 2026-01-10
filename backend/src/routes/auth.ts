@@ -7,11 +7,22 @@ import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { creditCoinsIfEligible } from "../lib/coinEngine";
 
 import { makeEmailVerifyToken, sha256Hex } from "../lib/emailVerify";
-import { sendVerifyEmail } from "../lib/mailer";
+import { sendVerifyEmail, sendTempPasswordEmail, sendPasswordChangedEmail } from "../lib/mailer";
 
 const router = Router();
 
 type Plan = "free" | "premium" | "creator";
+
+/** ✅ Strong password validation (server-side) */
+function validateStrongPassword(pw: string) {
+  if (!pw || pw.length < 8) return "Password must be at least 8 characters.";
+  if (!/[a-z]/.test(pw)) return "Password must include a lowercase letter.";
+  if (!/[A-Z]/.test(pw)) return "Password must include an uppercase letter.";
+  if (!/\d/.test(pw)) return "Password must include a number.";
+  if (!/[^A-Za-z0-9]/.test(pw)) return "Password must include a symbol.";
+  if (/(password|123456|qwerty|admin|letmein|111111)/i.test(pw)) return "Password is too common.";
+  return null;
+}
 
 function normalizePlan(plan: any, isPremium: any): Plan {
   const p = String(plan || "").toLowerCase();
@@ -25,6 +36,10 @@ function mustJwtSecret() {
   return secret;
 }
 
+/**
+ * ✅ Include token_version in JWT (tv) so we can invalidate all sessions after password change.
+ * Your requireAuth middleware must check token.tv === users.token_version
+ */
 function signToken(user: {
   id: string;
   email: string;
@@ -32,6 +47,7 @@ function signToken(user: {
   is_admin: boolean;
   is_premium: boolean;
   is_email_verified: boolean;
+  token_version: number;
 }) {
   const secret = mustJwtSecret();
   return jwt.sign(
@@ -42,6 +58,7 @@ function signToken(user: {
       is_admin: user.is_admin,
       is_premium: user.is_premium,
       is_email_verified: user.is_email_verified,
+      tv: user.token_version,
     },
     secret,
     { expiresIn: "7d" }
@@ -87,7 +104,7 @@ router.post("/signup", async (req: Request, res: Response) => {
       .parse(req.body);
 
     const fullName = `${body.first_name.trim()} ${body.last_name.trim()}`.trim();
-        // ✅ if email already exists, return 400 with a clear code
+
     const emailNorm = body.email.trim().toLowerCase();
     const exists = await query(`SELECT id FROM users WHERE email = $1 LIMIT 1`, [emailNorm]);
 
@@ -103,43 +120,36 @@ router.post("/signup", async (req: Request, res: Response) => {
     const insertRes = await query(
       `INSERT INTO users (email, phone, password_hash, full_name, age, is_email_verified)
        VALUES ($1, $2, $3, $4, $5, FALSE)
-       RETURNING id, email, phone, full_name, age, coins, plan, is_admin, is_premium, is_email_verified, email_verified_at`,
-      [
-        emailNorm,
-        body.phone?.trim() || null,
-        passwordHash,
-        fullName,
-        body.age ?? null,
-      ]
-
+       RETURNING id, email, phone, full_name, age, coins, plan, is_admin, is_premium,
+                 is_email_verified, email_verified_at, token_version`,
+      [emailNorm, body.phone?.trim() || null, passwordHash, fullName, body.age ?? null]
     );
 
     const user = insertRes.rows[0];
 
-    // ✅ SIGNUP BONUS (ADMIN-CONTROLLED)
-    // ✅ signup bonus (non-blocking for local/dev)
-      try {
-        await creditCoinsIfEligible({
-          userId: user.id,
-          ruleKey: "signup",
-          reason: "signup",
-          meta: {},
-        });
-      } catch (e) {
-        console.error("Signup bonus failed (non-blocking):", e);
-      }
+    // ✅ signup bonus (non-blocking)
+    try {
+      await creditCoinsIfEligible({
+        userId: user.id,
+        ruleKey: "signup",
+        reason: "signup",
+        meta: {},
+      });
+    } catch (e) {
+      console.error("Signup bonus failed (non-blocking):", e);
+    }
 
-      // ✅ email verify (non-blocking for dev)
-      try {
-        await issueEmailVerification(user.id, user.email);
-      } catch (e) {
-        console.error("Email verification failed (non-blocking):", e);
-      }
+    // ✅ email verify (non-blocking)
+    try {
+      await issueEmailVerification(user.id, user.email);
+    } catch (e) {
+      console.error("Email verification failed (non-blocking):", e);
+    }
 
-
-    // Re-fetch coins after bonus (so UI gets updated coins)
+    // Re-fetch (coins + latest values)
     const refreshed = await query(
-      `SELECT id, email, phone, full_name, age, coins, plan, is_admin, is_premium, is_email_verified, email_verified_at
+      `SELECT id, email, phone, full_name, age, coins, plan, is_admin, is_premium,
+              is_email_verified, email_verified_at, token_version
        FROM users
        WHERE id=$1`,
       [user.id]
@@ -155,6 +165,7 @@ router.post("/signup", async (req: Request, res: Response) => {
       is_admin: u.is_admin,
       is_premium: u.is_premium,
       is_email_verified: !!u.is_email_verified,
+      token_version: Number(u.token_version || 0),
     });
 
     return res.json({
@@ -174,16 +185,15 @@ router.post("/signup", async (req: Request, res: Response) => {
       },
       message: "Signup successful. Please verify your email.",
     });
- } catch (err: any) {
-  console.error("Signup failed:", err?.message || err);
-  if (err?.stack) console.error(err.stack);
+  } catch (err: any) {
+    console.error("Signup failed:", err?.message || err);
+    if (err?.stack) console.error(err.stack);
 
-  return res.status(500).json({
-    error: "Signup failed",
-    detail: err?.message || String(err),
-  });
-}
-
+    return res.status(500).json({
+      error: "Signup failed",
+      detail: err?.message || String(err),
+    });
+  }
 });
 
 // ✅ LOGIN
@@ -199,7 +209,7 @@ router.post("/login", async (req: Request, res: Response) => {
 
     const result = await query(
       `SELECT id, email, password_hash, is_admin, is_premium, full_name, age, phone, coins, plan,
-              is_email_verified, email_verified_at
+              is_email_verified, email_verified_at, token_version
        FROM users
        WHERE email = $1`,
       [emailNorm]
@@ -225,6 +235,7 @@ router.post("/login", async (req: Request, res: Response) => {
       is_admin: user.is_admin,
       is_premium: user.is_premium,
       is_email_verified: !!user.is_email_verified,
+      token_version: Number(user.token_version || 0),
     });
 
     return res.json({
@@ -246,6 +257,51 @@ router.post("/login", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("Login failed:", err);
     return res.status(500).json({ error: "Login failed." });
+  }
+});
+
+function makeTempPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  if (!/[A-Z]/.test(out)) out = "A" + out.slice(1);
+  if (!/\d/.test(out)) out = out.slice(0, 9) + "7";
+  return out;
+}
+
+router.post("/forgot-password", async (req: Request, res: Response) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ message: "Email is required." });
+
+  try {
+    const userRes = await query<{ id: string; email: string }>(
+      `SELECT id, email FROM users WHERE email = $1 LIMIT 1`,
+      [email]
+    );
+
+    // ✅ Always return ok (no email enumeration)
+    if (!userRes.rows.length) return res.json({ ok: true });
+
+    const u = userRes.rows[0];
+
+    const tempPassword = makeTempPassword();
+    const hash = await bcrypt.hash(tempPassword, 10);
+
+    await query(
+      `UPDATE users
+       SET password_hash = $1,
+           must_change_password = TRUE,
+           temp_password_expires_at = NOW() + interval '30 minutes',
+           token_version = token_version + 1
+       WHERE id = $2`,
+      [hash, u.id]
+    );
+
+    await sendTempPasswordEmail(u.email, tempPassword);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("forgot-password failed:", e);
+    return res.json({ ok: true });
   }
 });
 
@@ -311,20 +367,18 @@ router.post("/resend-verification", requireAuth, async (req: AuthRequest, res: R
     const u = dbRes.rows[0];
     if (u.is_email_verified) return res.json({ status: "already_verified" });
 
-    // issue a fresh token + email
     try {
       await issueEmailVerification(u.id, u.email);
       return res.json({ status: "sent" });
     } catch (e) {
       console.error("Resend verification failed (non-blocking):", e);
-      return res.json({ status: "not_sent" }); // still ok
+      return res.json({ status: "not_sent" });
     }
   } catch (err) {
     console.error("resend-verification failed:", err);
     return res.status(500).json({ error: "Unable to resend verification" });
   }
 });
-
 
 // ✅ ME
 router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
@@ -333,7 +387,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
 
     const dbRes = await query(
       `SELECT id, email, phone, full_name, age, coins, plan, is_admin, is_premium,
-              is_email_verified, email_verified_at
+              is_email_verified, email_verified_at, token_version
        FROM users
        WHERE id=$1`,
       [userId]
@@ -346,7 +400,6 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
     const u = dbRes.rows[0];
     const plan = normalizePlan(u.plan, u.is_premium);
 
-    // ✅ OPTIONAL: refresh token with latest flags
     const token = signToken({
       id: u.id,
       email: u.email,
@@ -354,6 +407,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
       is_admin: u.is_admin,
       is_premium: u.is_premium,
       is_email_verified: !!u.is_email_verified,
+      token_version: Number(u.token_version || 0),
     });
 
     return res.json({
@@ -394,7 +448,7 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
       `UPDATE users SET full_name = COALESCE($1, full_name), phone = COALESCE($2, phone)
        WHERE id = $3
        RETURNING id, email, phone, full_name, age, coins, plan, is_admin, is_premium,
-                 is_email_verified, email_verified_at`,
+                 is_email_verified, email_verified_at, token_version`,
       [body.full_name ?? null, body.phone ?? null, userId]
     );
 
@@ -422,7 +476,7 @@ router.patch("/me", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// ✅ CHANGE EMAIL (requires current password) -> make unverified again + send new verification mail
+// ✅ CHANGE EMAIL (kept as-is, but also refresh token_version in payload)
 router.patch("/me/email", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const body = z
@@ -433,7 +487,7 @@ router.patch("/me/email", requireAuth, async (req: AuthRequest, res: Response) =
 
     const dbRes = await query(
       `SELECT id, email, password_hash, is_admin, is_premium, full_name, age, phone, coins, plan,
-              is_email_verified, email_verified_at
+              is_email_verified, email_verified_at, token_version
        FROM users WHERE id = $1`,
       [userId]
     );
@@ -453,20 +507,18 @@ router.patch("/me/email", requireAuth, async (req: AuthRequest, res: Response) =
     const updateRes = await query(
       `UPDATE users SET email = $1 WHERE id = $2
        RETURNING id, email, phone, full_name, age, coins, plan, is_admin, is_premium,
-                 is_email_verified, email_verified_at`,
+                 is_email_verified, email_verified_at, token_version`,
       [emailNorm, userId]
     );
 
     const u = updateRes.rows[0];
 
-    // after email change, require verification again
-          try {
-        await issueEmailVerification(user.id, emailNorm); // ✅ new email
-
-      } catch (e) {
-        console.error("Email verification send failed (non-blocking):", e);
-      }
-
+    // require verification again
+    try {
+      await issueEmailVerification(user.id, emailNorm);
+    } catch (e) {
+      console.error("Email verification send failed (non-blocking):", e);
+    }
 
     const plan = normalizePlan(u.plan, u.is_premium);
 
@@ -476,7 +528,8 @@ router.patch("/me/email", requireAuth, async (req: AuthRequest, res: Response) =
       plan,
       is_admin: u.is_admin,
       is_premium: u.is_premium,
-      is_email_verified: false, // now unverified
+      is_email_verified: false,
+      token_version: Number(u.token_version || 0),
     });
 
     return res.json({
@@ -502,7 +555,7 @@ router.patch("/me/email", requireAuth, async (req: AuthRequest, res: Response) =
   }
 });
 
-// ✅ CHANGE PASSWORD (requires current password)
+// ✅ CHANGE PASSWORD (requires current password) + strong rules + invalidate tokens + send email alert
 router.patch("/me/password", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const body = z
@@ -513,17 +566,56 @@ router.patch("/me/password", requireAuth, async (req: AuthRequest, res: Response
       .parse(req.body);
 
     const userId = req.user!.id;
-    const dbRes = await query(`SELECT password_hash FROM users WHERE id = $1`, [userId]);
+
+    const dbRes = await query(
+      `SELECT id, email, password_hash, token_version
+       FROM users
+       WHERE id = $1`,
+      [userId]
+    );
     if (!dbRes.rows.length) return res.status(404).json({ error: "User not found" });
 
     const user = dbRes.rows[0];
+
     const ok = await bcrypt.compare(body.current_password, user.password_hash);
     if (!ok) return res.status(401).json({ error: "Invalid current password" });
 
-    const newHash = await bcrypt.hash(body.new_password, 10);
-    await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [newHash, userId]);
+    // ✅ Strong password enforcement (FIXED)
+    const ruleError = validateStrongPassword(body.new_password);
+    if (ruleError) return res.status(400).json({ error: ruleError });
 
-    return res.json({ success: true });
+    const newHash = await bcrypt.hash(body.new_password, 10);
+
+    // ✅ Update password + invalidate all old tokens
+    await query(
+      `UPDATE users
+       SET password_hash = $1,
+           must_change_password = FALSE,
+           temp_password_expires_at = NULL,
+           token_version = token_version + 1
+       WHERE id = $2`,
+      [newHash, userId]
+    );
+
+    // ✅ Security email alert (non-blocking)
+    try {
+      const ip =
+        (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
+        req.socket.remoteAddress ||
+        undefined;
+
+      const userAgent = String(req.headers["user-agent"] || "");
+
+      await sendPasswordChangedEmail(user.email, {
+        ip,
+        userAgent,
+        atISO: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.error("Password changed email failed (non-blocking):", e);
+    }
+
+    return res.json({ ok: true });
   } catch (err) {
     console.error("Change password failed:", err);
     return res.status(500).json({ error: "Unable to change password" });

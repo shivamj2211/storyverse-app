@@ -130,49 +130,6 @@ router.get("/", optionalAuth, async (req: Request, res: Response) => {
   }
 });
 
-/** GET /api/stories/:id */
-router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const storyId = req.params.id;
-  try {
-    const storyRes = await query(
-      `
-      SELECT s.id, s.slug, s.title, s.summary, s.cover_image_url,
-             COALESCE(AVG(sr.rating), 0) AS avg_rating
-      FROM stories s
-      JOIN story_versions v ON v.story_id = s.id AND v.is_published = true
-      LEFT JOIN story_ratings sr ON sr.story_id = s.id
-      WHERE s.id=$1
-      GROUP BY s.id
-      `,
-      [storyId]
-    );
-
-    if (!storyRes.rows.length) {
-      return res.status(404).json({ error: "Story not found or unpublished" });
-    }
-
-    const story = storyRes.rows[0];
-
-    const savedRes = await query(
-      "SELECT 1 FROM saved_stories WHERE user_id=$1 AND story_id=$2",
-      [req.user!.id, storyId]
-    );
-
-    return res.json({
-      id: story.id,
-      slug: story.slug,
-      title: story.title,
-      summary: story.summary,
-      coverImageUrl: story.cover_image_url,
-      avgRating: parseFloat(story.avg_rating) || 0,
-      saved: savedRes.rows.length > 0,
-    });
-  } catch (err: any) {
-    console.error("❌ /api/stories/:id error:", err?.message || err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
-
 /** POST /api/stories/:id/start (unchanged from your version) */
 /** POST /api/stories/:id/start  (RESUME by default, restart only when ?restart=1) */
 router.post("/:id/start", requireAuth, async (req: Request, res: Response) => {
@@ -234,6 +191,64 @@ router.post("/:id/start", requireAuth, async (req: Request, res: Response) => {
     return res.json({ runId: newRunId, resumed: false });
   } catch (err: any) {
     console.error("❌ /api/stories/:id/start error:", err?.message || err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/stories/genres  (for frontend compatibility) */
+router.get("/genres", async (_req: Request, res: Response) => {
+  try {
+    const r = await query(
+      `SELECT key, label
+       FROM genres
+       ORDER BY label ASC`
+    );
+    return res.json({ genres: r.rows });
+  } catch (err: any) {
+    console.error("❌ /api/stories/genres error:", err?.message || err);
+    return res.status(500).json({ error: "Unable to load genres" });
+  }
+});
+
+/** GET /api/stories/:id */
+router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  const storyId = req.params.id;
+  try {
+    const storyRes = await query(
+      `
+      SELECT s.id, s.slug, s.title, s.summary, s.cover_image_url,
+             COALESCE(AVG(sr.rating), 0) AS avg_rating
+      FROM stories s
+      JOIN story_versions v ON v.story_id = s.id AND v.is_published = true
+      LEFT JOIN story_ratings sr ON sr.story_id = s.id
+      WHERE s.id=$1
+      GROUP BY s.id
+      `,
+      [storyId]
+    );
+
+    if (!storyRes.rows.length) {
+      return res.status(404).json({ error: "Story not found or unpublished" });
+    }
+
+    const story = storyRes.rows[0];
+
+    const savedRes = await query(
+      "SELECT 1 FROM saved_stories WHERE user_id=$1 AND story_id=$2",
+      [req.user!.id, storyId]
+    );
+
+    return res.json({
+      id: story.id,
+      slug: story.slug,
+      title: story.title,
+      summary: story.summary,
+      coverImageUrl: story.cover_image_url,
+      avgRating: parseFloat(story.avg_rating) || 0,
+      saved: savedRes.rows.length > 0,
+    });
+  } catch (err: any) {
+    console.error("❌ /api/stories/:id error:", err?.message || err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });

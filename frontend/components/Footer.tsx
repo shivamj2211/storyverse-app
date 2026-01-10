@@ -113,6 +113,14 @@ export default function Footer() {
               <li>
                 <FooterLink href="/premium">Premium</FooterLink>
               </li>
+
+              {/* ✅ ADDED (without removing anything) */}
+              <li>
+                <FooterLink href="/about">About Us</FooterLink>
+              </li>
+              <li>
+                <FooterLink href="/faq">FAQ</FooterLink>
+              </li>
             </ul>
           </div>
 

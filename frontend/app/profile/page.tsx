@@ -130,6 +130,49 @@ function activityTitle(h: { type: string; story_title?: string | null; chapter_n
   return h.note ? `Coin update • ${h.note}` : "Coin update";
 }
 
+
+function scorePassword(pw: string) {
+  const s = pw || "";
+  let score = 0;
+
+  const lengthOK = s.length >= 8;
+  const hasLower = /[a-z]/.test(s);
+  const hasUpper = /[A-Z]/.test(s);
+  const hasNumber = /\d/.test(s);
+  const hasSymbol = /[^A-Za-z0-9]/.test(s);
+
+  // Base scoring
+  if (s.length >= 8) score += 1;
+  if (s.length >= 12) score += 1;
+  if (hasLower) score += 1;
+  if (hasUpper) score += 1;
+  if (hasNumber) score += 1;
+  if (hasSymbol) score += 1;
+
+  // Penalize very common patterns
+  const commonBad = /(password|123456|qwerty|admin|letmein|111111)/i.test(s);
+  if (commonBad) score = Math.max(0, score - 2);
+
+  // Clamp 0..6
+  score = Math.max(0, Math.min(6, score));
+
+  const ok = lengthOK && hasLower && hasUpper && hasNumber && hasSymbol && !commonBad;
+
+  const label =
+    score <= 1 ? "Very weak" :
+    score === 2 ? "Weak" :
+    score === 3 ? "Fair" :
+    score === 4 ? "Good" :
+    score === 5 ? "Strong" : "Very strong";
+
+  return {
+    score,
+    label,
+    ok,
+    checks: { lengthOK, hasLower, hasUpper, hasNumber, hasSymbol, commonBad },
+  };
+}
+
 export default function ProfilePage() {
   const router = useRouter();
 
@@ -138,6 +181,7 @@ export default function ProfilePage() {
 
   const [me, setMe] = useState<MePayload["user"] | null>(null);
   const [runs, setRuns] = useState<RunItem[]>([]);
+
 
   const token = useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -183,6 +227,19 @@ export default function ProfilePage() {
   const [autoScroll, setAutoScroll] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
 
+  const [emailStep, setEmailStep] = useState<"request" | "verify">("request");
+const [emailOtp, setEmailOtp] = useState("");
+const [otpSending, setOtpSending] = useState(false);
+const [otpVerifying, setOtpVerifying] = useState(false);
+const [otpCooldown, setOtpCooldown] = useState(0);
+
+
+   const [confirmNewPassword, setConfirmNewPassword] = useState("");
+    const [showPass, setShowPass] = useState(false);
+
+  const pwMeta = useMemo(() => scorePassword(newPassword), [newPassword]);
+
+
   // ✅ Email verification UI state
   const [verifySending, setVerifySending] = useState(false);
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
@@ -194,6 +251,14 @@ export default function ProfilePage() {
     setAutoScroll(localStorage.getItem("sv_autoscroll") === "1");
     setReduceMotion(localStorage.getItem("sv_reduce_motion") === "1");
   }, []);
+
+
+  useEffect(() => {
+  if (otpCooldown <= 0) return;
+  const t = setInterval(() => setOtpCooldown((s) => Math.max(0, s - 1)), 1000);
+  return () => clearInterval(t);
+}, [otpCooldown]);
+
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -279,6 +344,75 @@ export default function ProfilePage() {
       setUseLoading(false);
     }
   }
+
+
+  //modify profile functions
+  async function sendEmailChangeOtp() {
+  setAcctErr(null);
+
+  if (!newEmail) {
+    setAcctErr("Please enter a new email.");
+    return;
+  }
+  if (!emailPassword) {
+    setAcctErr("Please enter your current password to continue.");
+    return;
+  }
+
+  setOtpSending(true);
+  try {
+    const res = await fetch(api("/api/auth/me/email/request-otp"), {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ new_email: newEmail, password: emailPassword }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setAcctErr(data.error || "Unable to send OTP.");
+      return;
+    }
+    setEmailStep("verify");
+    setOtpCooldown(30);
+  } catch {
+    setAcctErr("Network error");
+  } finally {
+    setOtpSending(false);
+  }
+}
+
+async function verifyEmailChangeOtp() {
+  setAcctErr(null);
+
+  if (!emailOtp || emailOtp.trim().length < 4) {
+    setAcctErr("Please enter the OTP.");
+    return;
+  }
+
+  setOtpVerifying(true);
+  try {
+    const res = await fetch(api("/api/auth/me/email/verify-otp"), {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ new_email: newEmail, otp: emailOtp }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setAcctErr(data.error || "OTP verification failed.");
+      return;
+    }
+
+    // backend may return updated user + maybe new token
+    if (data.token) localStorage.setItem("token", data.token);
+    if (data.user) setMe(data.user);
+
+    setEmailOpen(false);
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("authChanged"));
+  } catch {
+    setAcctErr("Network error");
+  } finally {
+    setOtpVerifying(false);
+  }
+}
 
   // ✅ Refresh /me helper (used after resend)
   async function refreshMe() {
@@ -511,27 +645,50 @@ export default function ProfilePage() {
     }
   }
 
-  async function submitPasswordChange() {
-    setAcctErr(null);
-    setAcctLoading(true);
-    try {
-      const res = await fetch(api("/api/auth/me/password"), {
-        method: "PATCH",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setAcctErr(data.error || "Unable to change password");
-        return;
+        async function submitPasswordChange() {
+        setAcctErr(null);
+
+        if (!currentPassword || !newPassword || !confirmNewPassword) {
+          setAcctErr("Please fill all password fields.");
+          return;
+        }
+        if (newPassword !== confirmNewPassword) {
+          setAcctErr("New password and confirm password do not match.");
+          return;
+        }
+
+        const meta = scorePassword(newPassword);
+        if (!meta.ok) {
+          setAcctErr("Password is not strong enough. Please satisfy all rules.");
+          return;
+        }
+
+        setAcctLoading(true);
+        try {
+          const res = await fetch(api("/api/auth/me/password"), {
+            method: "PATCH",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            setAcctErr(data.error || "Unable to change password");
+            return;
+          }
+
+          // ✅ Auto logout after password change
+          localStorage.removeItem("token");
+          if (typeof window !== "undefined") window.dispatchEvent(new Event("authChanged"));
+          router.push("/login?reason=password_changed");
+        } catch {
+          setAcctErr("Network error");
+        } finally {
+          setAcctLoading(false);
+        }
       }
-      setPassOpen(false);
-    } catch {
-      setAcctErr("Network error");
-    } finally {
-      setAcctLoading(false);
-    }
-  }
+
+
 
   return (
     <main className="parchment-wrap">
@@ -674,10 +831,13 @@ export default function ProfilePage() {
               </button>
 
               <button
+                type="button"
                 className="btn-ghost w-full whitespace-nowrap text-sm"
                 onClick={() => {
+                  console.log("CHANGE EMAIL CLICKED");
                   setNewEmail(me.email || "");
                   setEmailPassword("");
+                  setAcctErr(null);
                   setEmailOpen(true);
                 }}
               >
@@ -687,10 +847,13 @@ export default function ProfilePage() {
               <button
                 className="btn-ghost w-full whitespace-nowrap text-sm"
                 onClick={() => {
-                  setCurrentPassword("");
-                  setNewPassword("");
-                  setPassOpen(true);
-                }}
+                setCurrentPassword("");
+                setNewPassword("");
+                setConfirmNewPassword("");
+                setAcctErr(null);
+                setPassOpen(true);
+              }}
+
               >
                 Change password
               </button>
@@ -1037,12 +1200,24 @@ export default function ProfilePage() {
 
               <div>
                 <label className="storyverse-label">Full name</label>
-                <input type="text" value={editFullName} onChange={(e) => setEditFullName(e.target.value)} className="storyverse-input" />
+                 <input
+                  type="text"
+                  placeholder="Your full name (shown on profile)"
+                  value={editFullName}
+                  onChange={(e) => setEditFullName(e.target.value)}
+                  className="storyverse-input"
+                />
               </div>
 
               <div>
                 <label className="storyverse-label">Phone</label>
-                <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="storyverse-input" />
+                <input
+                  type="tel"
+                  placeholder="Phone number (optional)"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  className="storyverse-input"
+                />
               </div>
 
               <div className="flex gap-2">
@@ -1059,15 +1234,20 @@ export default function ProfilePage() {
       )}
 
       {/* ===== MODAL: CHANGE EMAIL ===== */}
-      {emailOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setEmailOpen(false)}>
+            {emailOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setEmailOpen(false)}
+        >
           <div
             className="w-full max-w-md rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">Change email</div>
+                <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">
+                  Change email
+                </div>
                 <h3 className="mt-2 text-xl font-extrabold text-slate-900">Update your login email</h3>
               </div>
 
@@ -1081,42 +1261,140 @@ export default function ProfilePage() {
             </div>
 
             <div className="mt-4 space-y-3">
-              {acctErr && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{acctErr}</div>}
+              {acctErr && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {acctErr}
+                </div>
+              )}
+
+              {/* ✅ exactly like you asked */}
+              <div className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-slate-700/80">
+                <div>
+                  <b>Current email:</b> {me.email || "—"}
+                </div>
+                <div className="mt-1 text-xs text-slate-700/60">
+                  We’ll send an OTP to confirm the new email.
+                </div>
+              </div>
 
               <div>
                 <label className="storyverse-label">New email</label>
-                <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="storyverse-input" />
+                <input
+                  type="email"
+                  placeholder="Enter your new email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  className="storyverse-input"
+                  disabled={emailStep === "verify"}
+                />
               </div>
 
               <div>
                 <label className="storyverse-label">Current password</label>
-                <input type="password" value={emailPassword} onChange={(e) => setEmailPassword(e.target.value)} className="storyverse-input" />
+                <input
+                  type="password"
+                  placeholder="For security, enter your current password"
+                  value={emailPassword}
+                  onChange={(e) => setEmailPassword(e.target.value)}
+                  className="storyverse-input"
+                  disabled={emailStep === "verify"}
+                  autoComplete="current-password"
+                />
               </div>
 
-              <div className="flex gap-2">
-                <button className="btn-primary" disabled={acctLoading} onClick={submitEmailChange}>
-                  {acctLoading ? "Saving…" : "Change email"}
-                </button>
-                <button className="btn-ghost" onClick={() => setEmailOpen(false)}>
-                  Cancel
-                </button>
-              </div>
+              {emailStep === "verify" && (
+                <div>
+                  <label className="storyverse-label">OTP</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Enter OTP sent to new email"
+                    value={emailOtp}
+                    onChange={(e) => setEmailOtp(e.target.value)}
+                    className="storyverse-input"
+                  />
+
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={otpCooldown > 0 || otpSending}
+                      onClick={sendEmailChangeOtp}
+                    >
+                      {otpSending ? "Sending…" : otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend OTP"}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={otpVerifying}
+                      onClick={verifyEmailChangeOtp}
+                    >
+                      {otpVerifying ? "Verifying…" : "Verify & change email"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {emailStep === "request" ? (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={otpSending}
+                    onClick={sendEmailChangeOtp}
+                  >
+                    {otpSending ? "Sending…" : "Send OTP"}
+                  </button>
+
+                  <button type="button" className="btn-ghost" onClick={() => setEmailOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => {
+                      setEmailStep("request");
+                      setEmailOtp("");
+                      setAcctErr(null);
+                    }}
+                  >
+                    Back
+                  </button>
+
+                  <button type="button" className="btn-ghost" onClick={() => setEmailOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
+
       {/* ===== MODAL: CHANGE PASSWORD ===== */}
-      {passOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setPassOpen(false)}>
+        {passOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setPassOpen(false)}
+        >
           <div
             className="w-full max-w-md rounded-3xl border border-slate-200 bg-[rgba(255,255,255,0.96)] p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Header */}
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">Change password</div>
-                <h3 className="mt-2 text-xl font-extrabold text-slate-900">Update your password</h3>
+                <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">
+                  Change password
+                </div>
+                <h3 className="mt-2 text-xl font-extrabold text-slate-900">
+                  Update your account password
+                </h3>
               </div>
 
               <button
@@ -1128,24 +1406,118 @@ export default function ProfilePage() {
               </button>
             </div>
 
-            <div className="mt-4 space-y-3">
-              {acctErr && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{acctErr}</div>}
+            {/* Body */}
+            <div className="mt-4 space-y-4">
+              {acctErr && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {acctErr}
+                </div>
+              )}
 
+              {/* Show / hide */}
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-bold text-slate-900">Password fields</div>
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-900 hover:bg-slate-50"
+                  onClick={() => setShowPass((v) => !v)}
+                >
+                  {showPass ? "Hide" : "Show"}
+                </button>
+              </div>
+
+              {/* Current password */}
               <div>
                 <label className="storyverse-label">Current password</label>
-                <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="storyverse-input" />
+                <input
+                  type={showPass ? "text" : "password"}
+                  placeholder="Enter your current password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="storyverse-input"
+                  autoComplete="current-password"
+                />
+                <p className="mt-1 text-xs !text-slate-600">
+                  This helps us verify it’s really you.
+                </p>
               </div>
 
+              {/* New password */}
               <div>
-                <label className="storyverse-label">New password</label>
-                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="storyverse-input" />
+  <label className="storyverse-label">New password</label>
+  <input
+    type={showPass ? "text" : "password"}
+    placeholder="Create a strong password"
+    value={newPassword}
+    onChange={(e) => setNewPassword(e.target.value)}
+    className="storyverse-input"
+    autoComplete="new-password"
+  />
+
+  {/* Strength meter */}
+  <div className="mt-2">
+    <div className="flex items-center justify-between text-xs">
+      <span className="font-semibold text-slate-700">Strength</span>
+      <span className="font-extrabold text-slate-900">{pwMeta.label}</span>
+    </div>
+
+    <div className="mt-2 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+      <div
+        className="h-2 rounded-full bg-emerald-600 transition-all"
+        style={{ width: `${Math.round((pwMeta.score / 6) * 100)}%` }}
+      />
+    </div>
+
+    {/* Rules checklist */}
+    <ul className="mt-3 space-y-1 text-xs text-slate-700">
+      <li className={pwMeta.checks.lengthOK ? "text-emerald-700 font-semibold" : ""}>• At least 8 characters</li>
+      <li className={pwMeta.checks.hasUpper ? "text-emerald-700 font-semibold" : ""}>• 1 uppercase letter (A–Z)</li>
+      <li className={pwMeta.checks.hasLower ? "text-emerald-700 font-semibold" : ""}>• 1 lowercase letter (a–z)</li>
+      <li className={pwMeta.checks.hasNumber ? "text-emerald-700 font-semibold" : ""}>• 1 number (0–9)</li>
+      <li className={pwMeta.checks.hasSymbol ? "text-emerald-700 font-semibold" : ""}>• 1 symbol (!@#$…)</li>
+      {pwMeta.checks.commonBad && (
+        <li className="text-red-700 font-semibold">• Avoid common passwords like “123456”, “password”</li>
+      )}
+    </ul>
+  </div>
+</div>
+
+
+              {/* Confirm new password */}
+              <div>
+                <label className="storyverse-label">Confirm new password</label>
+                <input
+                  type={showPass ? "text" : "password"}
+                  placeholder="Re-enter the new password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  className="storyverse-input"
+                  autoComplete="new-password"
+                />
+
+                {newPassword && confirmNewPassword && newPassword !== confirmNewPassword && (
+                  <p className="mt-1 text-xs font-semibold text-red-700">
+                    New password and confirm password do not match.
+                  </p>
+                )}
               </div>
 
-              <div className="flex gap-2">
-                <button className="btn-primary" disabled={acctLoading} onClick={submitPasswordChange}>
+              {/* Actions */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={acctLoading}
+                  onClick={submitPasswordChange}
+                >
                   {acctLoading ? "Saving…" : "Change password"}
                 </button>
-                <button className="btn-ghost" onClick={() => setPassOpen(false)}>
+
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => setPassOpen(false)}
+                >
                   Cancel
                 </button>
               </div>
@@ -1153,6 +1525,7 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+
 
       {/* ===== MODAL 2: USED COINS DETAILS ===== */}
       {useOpen && (

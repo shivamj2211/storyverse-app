@@ -4,6 +4,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, authHeaders, getToken } from "./lib/api";
+import HowItWorks from "../components/HowItWorks";
+
+
 
 type Genre = { key: string; label: string };
 
@@ -489,6 +492,7 @@ export default function StoriesPage() {
                 </div>
               )}
             </div>
+            
 
             {/* ✅ DESKTOP HEADER (UNCHANGED) — exactly your old UI */}
             <div className="hidden sm:block">
@@ -793,6 +797,9 @@ export default function StoriesPage() {
                 )}
               </div>
             </div>
+            
+<HowItWorks />
+
           </>
         )}
       </div>

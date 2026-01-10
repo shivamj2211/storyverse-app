@@ -13,6 +13,9 @@ export interface AuthPayload {
   is_admin: boolean;
   is_premium: boolean;
   is_email_verified?: boolean;
+
+  // ✅ token_version embedded into JWT
+  tv?: number;
 }
 
 /** Express Request + user payload */
@@ -25,18 +28,19 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  if (!process.env.JWT_SECRET) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
     return res.status(500).json({ error: "JWT_SECRET is not set on server" });
   }
 
   const token = authHeader.slice("Bearer ".length);
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET) as AuthPayload;
+    const decoded = jwt.verify(token, secret) as AuthPayload;
 
-    // ✅ Pull latest flags from DB (source of truth)
+    // ✅ Pull latest flags + token_version from DB (source of truth)
     const dbRes = await query(
-      `SELECT id, email, plan, is_admin, is_premium, is_email_verified
+      `SELECT id, email, plan, is_admin, is_premium, is_email_verified, token_version
        FROM users
        WHERE id = $1`,
       [decoded.id]
@@ -48,6 +52,15 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
 
     const u = dbRes.rows[0];
 
+    // ✅ Token invalidation check (logout everywhere)
+    // If token doesn't have tv (older tokens), treat as invalid after rollout.
+    const tokenTv = typeof decoded.tv === "number" ? decoded.tv : -1;
+    const dbTv = Number(u.token_version || 0);
+
+    if (tokenTv !== dbTv) {
+      return res.status(401).json({ error: "Session expired. Please log in again." });
+    }
+
     req.user = {
       id: u.id,
       email: u.email,
@@ -55,6 +68,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       is_admin: !!u.is_admin,
       is_premium: !!u.is_premium,
       is_email_verified: !!u.is_email_verified,
+      tv: dbTv,
     };
 
     return next();
@@ -63,11 +77,13 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   }
 }
 
+// ⚠️ Prefer using signToken from auth.ts now (because it includes tv).
+// Keeping this for backward compatibility only.
 export function generateToken(payload: AuthPayload) {
-  if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET is required");
-  }
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "30d" });
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET is required");
+
+  return jwt.sign(payload, secret, { expiresIn: "30d" });
 }
 
 export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {

@@ -3,29 +3,44 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { api, authHeaders, getToken } from "../app/lib/api";
+import { api, getToken } from "../app/lib/api"; // ✅ changed (authHeaders removed)
 import ModesMenu from "./ModesMenu";
 
 interface User {
   id: string;
   email?: string;
+  full_name?: string | null;
   phone?: string;
   coins?: number;
   is_admin: boolean;
   is_premium: boolean;
 }
 
-function displayNameFromEmail(email?: string) {
-  if (!email) return "Reader";
-  const local = email.split("@")[0] || "Reader";
+function displayName(user?: { full_name?: string | null; email?: string }) {
+  const full = (user?.full_name || "").trim();
+  if (full) {
+    const first = full.split(/\s+/)[0] || full;
+    return first.charAt(0).toUpperCase() + first.slice(1);
+  }
+
+  if (!user?.email) return "Reader";
+  const local = user.email.split("@")[0] || "Reader";
   const cleaned = local.replace(/[._-]+/g, " ").trim();
   const first = cleaned.split(" ")[0] || local;
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
 
-function initialsFromEmail(email?: string) {
-  if (!email) return "R";
-  const local = email.split("@")[0] || "R";
+function initialsFromUser(user?: { full_name?: string | null; email?: string }) {
+  const full = (user?.full_name || "").trim();
+  if (full) {
+    const parts = full.split(/\s+/).filter(Boolean);
+    const a = parts[0]?.[0] || "R";
+    const b = parts[1]?.[0] || "";
+    return (a + b).toUpperCase();
+  }
+
+  if (!user?.email) return "R";
+  const local = user.email.split("@")[0] || "R";
   const first = local[0] || "R";
   const second = local[1] || "";
   return (first + second).toUpperCase();
@@ -51,13 +66,18 @@ export default function NavBar() {
       setLoading(false);
       return;
     }
+
     try {
+      // ✅ FORCE the auth header (this fixes your /me 401 in most cases)
       const res = await fetch(api("/api/auth/me"), {
-        headers: { ...authHeaders() },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         cache: "no-store",
       });
-      const data = await res.json();
-      if (res.ok) setUser(data.user);
+
+      const data = await res.json().catch(() => ({} as any));
+      if (res.ok) setUser(data.user || null);
       else setUser(null);
     } catch {
       setUser(null);
@@ -98,11 +118,12 @@ export default function NavBar() {
     localStorage.removeItem("token");
     setUser(null);
     window.dispatchEvent(new Event("authChanged"));
-    window.location.href = "/login";
+    window.location.href = "/login?reason=logged_out";
   };
 
-  const name = useMemo(() => displayNameFromEmail(user?.email), [user?.email]);
-  const initials = useMemo(() => initialsFromEmail(user?.email), [user?.email]);
+  const name = useMemo(() => displayName(user || undefined), [user?.full_name, user?.email]);
+  const initials = useMemo(() => initialsFromUser(user || undefined), [user?.full_name, user?.email]);
+
   const coins = Number(user?.coins ?? 0);
 
   const navItems: NavItem[] = useMemo(
@@ -159,12 +180,7 @@ export default function NavBar() {
                       strokeWidth="2"
                       strokeLinejoin="round"
                     />
-                    <path
-                      d="M6 18h10"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
+                    <path d="M6 18h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
                 </span>
 
@@ -225,7 +241,6 @@ export default function NavBar() {
               {/* Auth area */}
               {loading ? null : user ? (
                 <div className="flex items-center gap-2">
-                  {/* Theme button */}
                   <ModesMenu />
 
                   <div className="relative" ref={menuRef}>
@@ -236,9 +251,7 @@ export default function NavBar() {
                     >
                       <span className="hidden sm:inline text-sm text-slate-700 dark:text-zinc-200">
                         Hi,{" "}
-                        <span className="font-semibold text-slate-900 dark:text-zinc-100">
-                          {name}
-                        </span>
+                        <span className="font-semibold text-slate-900 dark:text-zinc-100">{name}</span>
                       </span>
 
                       <span className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-200 dark:ring-emerald-500/30 inline-flex items-center justify-center font-semibold">
@@ -262,13 +275,10 @@ export default function NavBar() {
                       </svg>
                     </button>
 
-                    {/* Dropdown */}
                     {menuOpen && (
                       <div className="absolute right-0 mt-2 w-60 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg overflow-hidden">
                         <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-700">
-                          <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                            {name}
-                          </div>
+                          <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100">{name}</div>
                           <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
                             {user.email || "Signed in"}
                           </div>
@@ -338,12 +348,7 @@ export default function NavBar() {
                 aria-label="Open menu"
               >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M4 7h16M4 12h16M4 17h16"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
+                  <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               </button>
             </div>

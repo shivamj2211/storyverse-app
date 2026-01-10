@@ -1,3 +1,4 @@
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
@@ -23,7 +24,35 @@ export function getToken() {
 
 
 
+
+
 export function authHeaders() {
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token = typeof window !== "undefined" ? getToken() : "";
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+
+
+export async function apiFetch(input: RequestInfo, init: RequestInit = {}) {
+  const res = await fetch(input, init);
+
+  // ✅ Auto logout on token invalid / session expired
+  if (res.status === 401) {
+    try {
+      const data = await res.clone().json().catch(() => ({}));
+      const msg = String((data as any)?.error || "");
+
+      // If token expired or invalid, clear it
+      if (msg.toLowerCase().includes("session expired") || msg.toLowerCase().includes("invalid token") || msg.toLowerCase().includes("unauthorized")) {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("token");
+          window.dispatchEvent(new Event("authChanged"));
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return res;
 }
