@@ -101,15 +101,11 @@ export default function Footer() {
           <div className="space-y-3">
             <ColTitle>Quick Links</ColTitle>
             <ul className="space-y-2">
-              <li>
-                <FooterLink href="/">Home</FooterLink>
-              </li>
+             
               <li>
                 <FooterLink href="/explore">Explore</FooterLink>
               </li>
-              <li>
-                <FooterLink href="/genres">Genres</FooterLink>
-              </li>
+              
               <li>
                 <FooterLink href="/premium">Premium</FooterLink>
               </li>
