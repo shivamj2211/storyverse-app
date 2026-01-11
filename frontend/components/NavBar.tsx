@@ -12,6 +12,7 @@ interface User {
   full_name?: string | null;
   phone?: string;
   coins?: number;
+  plan?: "free" | "premium" | "creator";
   is_admin: boolean;
   is_premium: boolean;
 }
@@ -196,12 +197,18 @@ export default function NavBar() {
 
               {/* Desktop links */}
               <div className="hidden md:flex items-center gap-1 ml-2">
-                {navItems
-                  .filter((x) => (x.authOnly ? !!user : true))
-                  .map((item) => (
-                    <LinkPill key={item.href} href={item.href} label={item.label} />
-                  ))}
-              </div>
+  {navItems
+    .filter((x) => (x.authOnly ? !!user : true))
+    .map((item) => (
+      <LinkPill key={item.href} href={item.href} label={item.label} />
+    ))}
+
+  {/* ✅ Creator Studio (desktop) */}
+  {user?.plan === "creator" && (
+    <LinkPill href="/creator" label="Creator Studio" />
+  )}
+</div>
+
             </div>
 
             {/* Right: actions */}
@@ -293,6 +300,9 @@ export default function NavBar() {
                             { href: "/library", label: "Library" },
                             { href: "/wallet", label: "Wallet" },
                             { href: "/profile", label: "Profile" },
+                            ...(user?.plan === "creator"
+                            ? [{ href: "/creator", label: "Creator Studio" }]
+                            : []),
                             { href: "/premium", label: "Premium" },
                           ].map((x) => (
                             <Link
@@ -383,6 +393,9 @@ export default function NavBar() {
                         { href: "/saved", label: "Saved" },
                         { href: "/wallet", label: "Wallet" },
                         { href: "/profile", label: "Profile" },
+                        ...(user?.plan === "creator"
+                        ? [{ href: "/creator", label: "Creator Studio" }]
+                        : []),
                       ].map((x) => (
                         <Link
                           key={x.href}

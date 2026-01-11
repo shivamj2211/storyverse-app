@@ -22,6 +22,11 @@ import writingLikes from "./routes/writingLikes";
 import writingsRead from "./routes/writingsRead";
 import exploreEditors from "./routes/exploreEditors";
 import adminCreateWriting from "./routes/adminCreateWriting";
+import razorpayRoutes from "./routes/razorpay";
+import creatorRoutes from "./routes/creator";
+
+
+
 
 dotenv.config();
 
@@ -112,6 +117,8 @@ app.use("/api", writingLikes);
 app.use("/api", writingsRead);
 app.use("/api", exploreEditors);
 app.use("/api", adminCreateWriting);
+app.use("/api/razorpay", razorpayRoutes);
+app.use("/api/creator", creatorRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`✅ Backend running on port ${PORT}`));
