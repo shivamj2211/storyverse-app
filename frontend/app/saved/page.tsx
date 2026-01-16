@@ -88,7 +88,7 @@ export default function SavedPage() {
 
             <div className="mt-6 flex flex-wrap gap-3">
               <button
-                className="story-btn story-btn-primary px-5"
+                className="story-btn story-btn-primary px-5 w-full sm:w-auto"
                 onClick={() => router.push("/login")}
               >
                 Go to Login
@@ -167,7 +167,7 @@ export default function SavedPage() {
             <div className="text-xs font-bold tracking-[0.22em] uppercase text-slate-700/70">
               Your Bookmarks
             </div>
-            <h1 className="mt-3 text-3xl sm:text-4xl font-extrabold leading-tight text-slate-900">
+            <h1 className="mt-2 text-2xl sm:text-4xl font-extrabold leading-tight text-slate-900">
               Saved <span className="parchment-accent">Stories</span>
             </h1>
             <p className="mt-2 text-sm text-slate-700/80">
@@ -187,7 +187,7 @@ export default function SavedPage() {
         <div className="grid grid-cols-1 gap-5">
           {stories.map((story) => (
             <section key={story.id} className="parchment-card">
-              <div className="flex flex-wrap items-start justify-between gap-4 relative">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-start sm:justify-between gap-4 relative">
                 <div className="min-w-0 w-full flex-1 sm:min-w-[240px]">
                   <div className="flex items-start justify-between gap-3">
                     <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 leading-snug">
@@ -215,7 +215,7 @@ export default function SavedPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="story-actions flex">
+                <div className="story-actions flex flex-col sm:flex-row w-full sm:w-auto gap-2 sm:gap-3 sm:justify-end">
                   <button
                     onClick={async () => {
                       const res = await fetch(api(`/api/stories/${story.id}/start`), {
@@ -232,7 +232,7 @@ export default function SavedPage() {
                       }
                       router.push(`/read/${data.runId}`);
                     }}
-                    className="story-btn story-btn-primary px-5"
+                    className="story-btn story-btn-primary px-5 w-full sm:w-auto w-full sm:w-auto"
                   >
                     Read
                   </button>
@@ -241,7 +241,7 @@ export default function SavedPage() {
 
                   <button
                     onClick={() => handleUnsave(story.id)}
-                    className="story-btn px-5"
+                    className="story-btn px-5 w-full sm:w-auto"
                   >
                     Remove
                   </button>

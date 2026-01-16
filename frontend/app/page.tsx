@@ -4,7 +4,20 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, authHeaders, getToken } from "./lib/api";
-import HowItWorks from "../components/HowItWorks";
+import Image from "next/image";
+import { StoryGridSkeleton } from "../..../../components/skeletons/StoryGridSkeleton";
+
+import dynamic from "next/dynamic";
+const HowItWorks = dynamic(() => import("../components/HowItWorks"), {
+  ssr: false,
+  loading: () => (
+    <div className="parchment-panel p-3 sm:p-6">
+      <div className="h-5 w-40 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse" />
+      <div className="mt-2 h-3 w-72 rounded bg-slate-200 dark:bg-zinc-800 animate-pulse" />
+    </div>
+  ),
+});
+
 
 
 
@@ -287,14 +300,21 @@ export default function StoriesPage() {
 
   // ✅ Only show full loader ON FIRST LOAD
   if (initialLoading && loading && stories.length === 0) {
-    return (
-      <main className="parchment-wrap">
-        <div className="parchment-shell-wide">
-          <div className="parchment-panel">Loading stories…</div>
+  return (
+    <main className="parchment-wrap">
+      <div className="parchment-shell-wide">
+        <div className="parchment-panel p-3 sm:p-6">
+          <div className="parchment-kicker">Stories</div>
+          <div className="parchment-h1">Loading…</div>
+          <div className="mt-4">
+            <StoryGridSkeleton count={6} />
+          </div>
         </div>
-      </main>
-    );
-  }
+      </div>
+    </main>
+  );
+}
+
 
   if (error) {
     return (
@@ -693,14 +713,17 @@ export default function StoriesPage() {
                     className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden"
                   >
                     <div className="relative h-36 sm:h-44 bg-slate-50">
-                      {story.coverImageUrl ? (
-                        <img
-                          src={story.coverImageUrl}
-                          alt={story.title}
-                          loading="lazy"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
+                     {story.coverImageUrl ? (
+                  <Image
+                    src={story.coverImageUrl}
+                    alt={story.title}
+                    fill
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 600px"
+                    className="object-cover"
+                    // first 2 images priority, baaki auto-lazy
+                    priority={false}
+                  />
+                ) : (
                         <div className="h-full w-full flex items-center justify-center">
                           <div className="h-16 w-16 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-3xl font-extrabold">
                             {story.title.slice(0, 1)}

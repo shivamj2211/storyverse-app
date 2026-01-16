@@ -612,10 +612,13 @@ return (
           <section className="reading-section rating-box rating-glow">
             <div className="rating-header">
               <div>
-                <div className="text-base font-extrabold text-slate-900">Leave your mark</div>
-                <div className="text-xs text-slate-600 mt-1">
-                  Required before choosing the next genre.
-                </div>
+                <div className="text-sm sm:text-base font-extrabold text-slate-900">
+  Leave your mark
+</div>
+<div className="text-[11px] sm:text-xs text-slate-600 mt-1">
+  Required before choosing the next genre.
+</div>
+
               </div>
 
               {ratingSubmitted ? (
@@ -632,28 +635,31 @@ return (
               )}
             </div>
 
-            <div className="rating-scale">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  className={`rating-pill ${rating === n ? "rating-pill-selected" : ""}`}
-                  onClick={() => setRating(n)}
-                  type="button"
-                  aria-pressed={rating === n}
-                >
-                  {n}
-                </button>
-              ))}
+            {/* ✅ Rating buttons: one-line on mobile */}
+<div className="rating-row">
+  {[1, 2, 3, 4, 5].map((n) => (
+    <button
+      key={n}
+      className={`rating-pill ${rating === n ? "rating-pill-selected" : ""}`}
+      onClick={() => setRating(n)}
+      type="button"
+      aria-pressed={rating === n}
+    >
+      {n}
+    </button>
+  ))}
+</div>
 
-              <button
-                className="rating-submit"
-                onClick={submitRating}
-                disabled={ratingSubmitted}
-                type="button"
-              >
-                {ratingSubmitted ? "Submitted" : "Submit Rating"}
-              </button>
-            </div>
+{/* ✅ Submit: always visible, full width on mobile */}
+<button
+  className="rating-submit"
+  onClick={submitRating}
+  disabled={ratingSubmitted}
+  type="button"
+>
+  {ratingSubmitted ? "Submitted" : "Submit Rating"}
+</button>
+
 
             {!ratingSubmitted && (
               <div className="rating-helper">

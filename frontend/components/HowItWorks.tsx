@@ -141,9 +141,7 @@ export default function HowItWorks() {
             </Link>
             <Link
               href="/signup"
-              className="inline-flex items-center justify-center rounded-2xl border px-5 py-3 text-sm font-extrabold transition
-bg-slate-900 text-white border-slate-800 hover:bg-slate-800
-dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-300 dark:hover:bg-zinc-200"
+              className="inline-flex items-center justify-center rounded-2xl border px-5 py-3 text-sm font-extrabold transition bg-white text-slate-900 border-slate-200 hover:bg-slate-50 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-300 dark:hover:bg-zinc-200"
             >
               Create Account
             </Link>
