@@ -148,15 +148,22 @@ router.post("/:id/start", requireAuth, async (req: Request, res: Response) => {
     const versionId = versionRes.rows[0].id;
 
     // ✅ ALWAYS try to resume latest run (premium + free)
-    if (!restart) {
-      const existing = await query(
-        "SELECT id FROM story_runs WHERE user_id=$1 AND story_id=$2 ORDER BY started_at DESC LIMIT 1",
-        [user.id, storyId]
-      );
-      if (existing.rows.length) {
-        return res.json({ runId: existing.rows[0].id, resumed: true });
+     // ✅ Resume ONLY an active (not completed) run.
+    // This prevents creating multiple "Continue Reading" entries for same story.
+      if (!restart) {
+        const existing = await query(
+          `SELECT id
+          FROM story_runs
+          WHERE user_id=$1 AND story_id=$2 AND is_completed=false
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+          [user.id, storyId]
+        );
+
+        if (existing.rows.length) {
+          return res.json({ runId: existing.rows[0].id, resumed: true });
+        }
       }
-    }
 
     // Create fresh run only when restart=1 or no existing run
     const startNodeRes = await query(

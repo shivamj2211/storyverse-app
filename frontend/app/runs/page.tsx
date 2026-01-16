@@ -85,7 +85,7 @@ export default function LibraryPage() {
 
             <div className="mt-6">
               <button
-                className="story-btn story-btn-primary px-6"
+                className="story-btn story-btn-primary px-6 w-full sm:w-auto"
                 onClick={() => router.push("/login")}
               >
                 Go to Login
@@ -159,7 +159,7 @@ export default function LibraryPage() {
           <h1 className="mt-3 text-3xl sm:text-4xl font-extrabold text-slate-900">
             Continue <span className="parchment-accent">Reading</span>
           </h1>
-          <p className="mt-2 text-sm text-slate-700/80">
+          <p className="mt-1 text-[13px] sm:text-sm text-slate-700/80">
             Pick up exactly where you left off.
           </p>
         </div>
@@ -174,7 +174,7 @@ export default function LibraryPage() {
 
             return (
               <section key={run.id} className="run-card">
-                <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:justify-between gap-4">
                   <div className="min-w-0 w-full flex-1 sm:min-w-[260px]">
 
                     <div className="flex items-start justify-between gap-3">
@@ -201,10 +201,10 @@ export default function LibraryPage() {
                     </div>
                   </div>
 
-                  <div className="story-actions flex">
+                  <div className="story-actions flex flex-col sm:flex-row w-full sm:w-auto gap-2 sm:gap-3 sm:justify-end">
                     <button
                       onClick={() => router.push(`/read/${run.id}`)}
-                      className="story-btn story-btn-primary px-6"
+                      className="story-btn story-btn-primary px-6 w-full sm:w-auto"
                     >
                       Continue Reading
                     </button>

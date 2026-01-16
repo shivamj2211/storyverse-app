@@ -11,14 +11,24 @@ const TOTAL_STEPS = 5;
 router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
   const user = req.user!;
   try {
-    const runsRes = await query(
-      `SELECT r.id, r.story_id,  r.is_completed, r.started_at, r.updated_at, s.title
-       FROM story_runs r
-       JOIN stories s ON r.story_id = s.id
-       WHERE r.user_id=$1
-       ORDER BY r.started_at DESC`,
-      [user.id]
-    );
+   const runsRes = await query(
+  `
+  SELECT DISTINCT ON (r.story_id)
+    r.id,
+    r.story_id,
+    r.is_completed,
+    r.started_at,
+    r.updated_at,
+    s.title
+  FROM story_runs r
+  JOIN stories s ON r.story_id = s.id
+  WHERE r.user_id=$1
+  -- ✅ prefer in-progress run; else latest completed
+  ORDER BY r.story_id, r.is_completed ASC, r.updated_at DESC
+  `,
+  [user.id]
+);
+
     const runs = runsRes.rows.map((r) => ({
       id: r.id,
       storyId: r.story_id,
