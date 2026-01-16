@@ -69,7 +69,6 @@ export default function NavBar() {
     }
 
     try {
-      // ✅ FORCE the auth header (this fixes your /me 401 in most cases)
       const res = await fetch(api("/api/auth/me"), {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -99,7 +98,6 @@ export default function NavBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (!menuRef.current) return;
@@ -109,7 +107,6 @@ export default function NavBar() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  // Close mobile menu on route change
   useEffect(() => {
     setMobileOpen(false);
     setMenuOpen(false);
@@ -168,9 +165,9 @@ export default function NavBar() {
           "border-b border-slate-200 dark:border-zinc-700",
         ].join(" ")}
       >
-        <nav className="mx-auto max-w-6xl px-4 sm:px-6">
+        {/* ✅ Ensure readable text even in dark background */}
+        <nav className="mx-auto max-w-6xl px-4 sm:px-6 text-slate-900 dark:text-zinc-100">
           <div className="h-16 flex items-center justify-between gap-2">
-            {/* Left: Brand + main links */}
             <div className="flex items-center gap-3 min-w-0">
               <Link href="/" className="flex items-center gap-2 group min-w-0">
                 <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
@@ -195,25 +192,18 @@ export default function NavBar() {
                 </div>
               </Link>
 
-              {/* Desktop links */}
               <div className="hidden md:flex items-center gap-1 ml-2">
-  {navItems
-    .filter((x) => (x.authOnly ? !!user : true))
-    .map((item) => (
-      <LinkPill key={item.href} href={item.href} label={item.label} />
-    ))}
+                {navItems
+                  .filter((x) => (x.authOnly ? !!user : true))
+                  .map((item) => (
+                    <LinkPill key={item.href} href={item.href} label={item.label} />
+                  ))}
 
-  {/* ✅ Creator Studio (desktop) */}
-  {user?.plan === "creator" && (
-    <LinkPill href="/creator" label="Creator Studio" />
-  )}
-</div>
-
+                {user?.plan === "creator" && <LinkPill href="/creator" label="Creator Studio" />}
+              </div>
             </div>
 
-            {/* Right: actions */}
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              {/* Premium CTA */}
               {!loading && (
                 <Link
                   href="/premium"
@@ -245,7 +235,6 @@ export default function NavBar() {
                 </Link>
               )}
 
-              {/* Auth area */}
               {loading ? null : user ? (
                 <div className="flex items-center gap-2">
                   <ModesMenu />
@@ -257,8 +246,7 @@ export default function NavBar() {
                       aria-label="Open user menu"
                     >
                       <span className="hidden sm:inline text-sm text-slate-700 dark:text-zinc-200">
-                        Hi,{" "}
-                        <span className="font-semibold text-slate-900 dark:text-zinc-100">{name}</span>
+                        Hi, <span className="font-semibold text-slate-900 dark:text-zinc-100">{name}</span>
                       </span>
 
                       <span className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-200 dark:ring-emerald-500/30 inline-flex items-center justify-center font-semibold">
@@ -300,9 +288,7 @@ export default function NavBar() {
                             { href: "/library", label: "Library" },
                             { href: "/wallet", label: "Wallet" },
                             { href: "/profile", label: "Profile" },
-                            ...(user?.plan === "creator"
-                            ? [{ href: "/creator", label: "Creator Studio" }]
-                            : []),
+                            ...(user?.plan === "creator" ? [{ href: "/creator", label: "Creator Studio" }] : []),
                             { href: "/premium", label: "Premium" },
                           ].map((x) => (
                             <Link
@@ -325,7 +311,7 @@ export default function NavBar() {
 
                           <button
                             onClick={handleLogout}
-                            className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
+                            className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10"
                           >
                             Logout
                           </button>
@@ -338,20 +324,20 @@ export default function NavBar() {
                 <div className="hidden sm:flex items-center gap-2">
                   <Link
                     href="/login"
-                    className="px-4 py-2 rounded-full text-sm !bg-slate-200 !text-slate-700 hover:!bg-slate-100 transition whitespace-nowrap"
+                    className="px-4 py-2 rounded-full text-sm bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition whitespace-nowrap"
                   >
                     Login
                   </Link>
                   <Link
                     href="/signup"
-                    className="px-4 py-2 rounded-full text-sm font-medium !bg-slate-900 !text-white hover:!text-white hover:bg-slate-950 transition shadow-sm whitespace-nowrap"
+                    className="px-4 py-2 rounded-full text-sm font-medium !bg-white !text-slate-900 hover:!bg-slate-100 transition shadow-sm whitespace-nowrap chrome-forced-dark-fix"
                   >
                     Sign up
                   </Link>
+
                 </div>
               )}
 
-              {/* Mobile hamburger */}
               <button
                 className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition"
                 onClick={() => setMobileOpen((v) => !v)}
@@ -364,10 +350,9 @@ export default function NavBar() {
             </div>
           </div>
 
-          {/* Mobile menu panel */}
           {mobileOpen && (
             <div className="md:hidden pb-4">
-              <div className="mt-2 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+              <div className="mt-2 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden chrome-forced-dark-fix">
                 <div className="p-2">
                   <div className="px-1 py-2">
                     <ModesMenu />
@@ -393,9 +378,7 @@ export default function NavBar() {
                         { href: "/saved", label: "Saved" },
                         { href: "/wallet", label: "Wallet" },
                         { href: "/profile", label: "Profile" },
-                        ...(user?.plan === "creator"
-                        ? [{ href: "/creator", label: "Creator Studio" }]
-                        : []),
+                        ...(user?.plan === "creator" ? [{ href: "/creator", label: "Creator Studio" }] : []),
                       ].map((x) => (
                         <Link
                           key={x.href}
@@ -429,7 +412,7 @@ export default function NavBar() {
 
                       <button
                         onClick={handleLogout}
-                        className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
+                        className="w-full text-left px-3 py-2 rounded-xl text-sm text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10"
                       >
                         Logout
                       </button>
@@ -444,12 +427,13 @@ export default function NavBar() {
                       >
                         Login
                       </Link>
-                      <Link
-                        href="/signup"
-                        className="text-center px-4 py-2 rounded-xl text-sm font-medium !bg-slate-900 !text-white hover:!text-white hover:bg-slate-950 transition whitespace-nowrap"
-                      >
-                        Sign up
-                      </Link>
+                     <Link
+                    href="/signup"
+                    className="text-center px-4 py-2 rounded-xl text-sm font-medium !bg-white !text-slate-900 hover:!bg-slate-100 transition whitespace-nowrap chrome-forced-dark-fix"
+                  >
+                    Sign up
+                  </Link>
+
                     </div>
                   )}
                 </div>

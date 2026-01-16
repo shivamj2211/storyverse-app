@@ -1558,6 +1558,14 @@ button {
   color: #fff;
   box-shadow: 0 18px 40px rgba(15,118,110,0.14);
 }
+/* FIX: primary tab hover should NOT turn white (white text becomes invisible) */
+.tab-btn-primary:hover{
+  transform: translateY(-1px);
+  background: linear-gradient(90deg, #0f766e, #b45309) !important;
+  color: #fff !important;
+  box-shadow: 0 18px 40px rgba(15,118,110,0.18) !important;
+}
+
 
 /* Sticky header wrapper (inside panel) */
 .panel-sticky{
@@ -2187,4 +2195,14 @@ button {
   white-space: nowrap;
   visibility: hidden;
 }
+
+/* ================================
+   Chrome "Force Dark Mode" Fix
+   - Chrome forced-dark uses invert filter on whole page.
+   - Apply this class to "opt out" of that inversion for specific UI blocks.
+   ================================ */
+.chrome-forced-dark-fix {
+  filter: invert(1) hue-rotate(180deg) !important;
+}
+
 

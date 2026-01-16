@@ -92,7 +92,7 @@ router.use("/reward-rules", adminRewardRules);
       // List stories and their versions (admin view)
       router.get('/stories', requireAuth, requireAdmin, async (_req: AuthRequest, res: Response) => {
         try {
-          const resStories = await query('SELECT id, slug, title, summary FROM stories');
+          const resStories = await query('SELECT id, slug, title, summary, cover_image_url FROM stories');
           const stories = [] as any[];
           for (const story of resStories.rows) {
             const versionsRes = await query('SELECT id, version_name, is_published, published_at, notes FROM story_versions WHERE story_id=$1 ORDER BY created_at DESC', [story.id]);
@@ -101,6 +101,7 @@ router.use("/reward-rules", adminRewardRules);
               slug: story.slug,
               title: story.title,
               summary: story.summary,
+              coverImageUrl: story.cover_image_url,
               versions: versionsRes.rows.map((v) => ({ id: v.id, versionName: v.version_name, isPublished: v.is_published, publishedAt: v.published_at, notes: v.notes }))
             });
           }
@@ -115,7 +116,7 @@ router.use("/reward-rules", adminRewardRules);
       router.get('/stories/:id', requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
         const storyId = req.params.id;
         try {
-          const storyRes = await query('SELECT id, slug, title, summary FROM stories WHERE id=$1', [storyId]);
+          const storyRes = await query('SELECT id, slug, title, summary, cover_image_url FROM stories WHERE id=$1', [storyId]);
           if (!storyRes.rows.length) {
             return res.status(404).json({ error: 'Story not found' });
           }
@@ -125,6 +126,7 @@ router.use("/reward-rules", adminRewardRules);
             slug: storyRes.rows[0].slug,
             title: storyRes.rows[0].title,
             summary: storyRes.rows[0].summary,
+            coverImageUrl: storyRes.rows[0].cover_image_url,
             versions: versionsRes.rows.map((v) => ({ id: v.id, versionName: v.version_name, isPublished: v.is_published, publishedAt: v.published_at, notes: v.notes }))
           });
         } catch (err) {
@@ -135,6 +137,58 @@ router.use("/reward-rules", adminRewardRules);
       // ----------------------------
       // ADMIN: Nodes (story_nodes)
       // ----------------------------
+      // Update story metadata (title/slug/summary/cover)
+router.patch('/stories/:id', requireAuth, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const storyId = req.params.id;
+  try {
+    const schema = z.object({
+      title: z.string().min(1).max(200).optional(),
+      slug: z.string().min(1).max(200).optional(),
+      summary: z.string().max(2000).optional().nullable(),
+      coverImageUrl: z.string().url().optional().nullable(),
+      cover_image_url: z.string().url().optional().nullable(), // allow snake_case
+    });
+
+    const body = schema.parse(req.body || {});
+    const cover = (body.coverImageUrl ?? body.cover_image_url) ?? undefined;
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    let i = 1;
+
+    if (body.title !== undefined) { fields.push(`title=$${i++}`); values.push(body.title); }
+    if (body.slug !== undefined) { fields.push(`slug=$${i++}`); values.push(body.slug); }
+    if (body.summary !== undefined) { fields.push(`summary=$${i++}`); values.push(body.summary); }
+    if (cover !== undefined) { fields.push(`cover_image_url=$${i++}`); values.push(cover); }
+
+    if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
+
+    values.push(storyId);
+
+    const upd = await query(
+      `UPDATE stories SET ${fields.join(', ')}, updated_at=NOW() WHERE id=$${i} RETURNING id, slug, title, summary, cover_image_url`,
+      values
+    );
+
+    if (!upd.rows.length) return res.status(404).json({ error: 'Story not found' });
+
+    const s = upd.rows[0];
+    return res.json({
+      ok: true,
+      story: {
+        id: s.id,
+        slug: s.slug,
+        title: s.title,
+        summary: s.summary,
+        coverImageUrl: s.cover_image_url,
+      },
+    });
+  } catch (err: any) {
+    if (err?.name === 'ZodError') return res.status(400).json({ error: 'Invalid payload', details: err.errors });
+    console.error(err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
 
       // Get latest versionId for a story (prefer published, else latest)
       async function getBestVersionId(storyId: string) {
