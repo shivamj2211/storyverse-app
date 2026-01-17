@@ -182,7 +182,7 @@ export default function StoriesPage() {
         id: String(s.id),
         title: String(s.title || ""),
         summary: String(s.summary || ""),
-        avgRating: safeNumber(s.avgRating),
+        avgRating: safeNumber(s.avgRating ?? (s as any).avg_rating ?? (s as any).averageRating),
         saved: !!s.saved,
         coverImageUrl: s.coverImageUrl ?? null,
         genres: Array.isArray(s.genres) ? s.genres : [],
@@ -703,7 +703,8 @@ export default function StoriesPage() {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-5">
               {stories.map((story) => {
-                const rating = safeNumber(story.avgRating).toFixed(2);
+                const rawRating = safeNumber(story.avgRating);
+                const rating = rawRating > 0 ? rawRating.toFixed(2) : "";
                 const busy = busyId === story.id;
                 const g = (story.genres || []).slice(0, 3);
 
@@ -732,9 +733,16 @@ export default function StoriesPage() {
                       )}
 
                       <div className="absolute top-2 right-2">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-white/95 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-sm">
-                          ⭐ <b>{rating}</b>
-                        </span>
+                        {rating ? (
+  <span className="inline-flex items-center gap-1 rounded-full bg-white/95 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-sm">
+    ⭐ <b>{rating}</b>
+  </span>
+) : (
+  <span className="inline-flex items-center gap-1 rounded-full bg-white/90 border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
+    ⭐ New
+  </span>
+)}
+
                       </div>
                     </div>
 

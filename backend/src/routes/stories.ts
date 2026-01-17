@@ -67,12 +67,13 @@ router.get("/", optionalAuth, async (req: Request, res: Response) => {
 
     // Base query
     // Note: grouping by s.id is okay because s.id is PK (Postgres functional dependency).
-    let sql = `
+        let sql = `
       SELECT s.id, s.slug, s.title, s.summary, s.cover_image_url,
-             COALESCE(AVG(sr.rating), 0) AS avg_rating
+             COALESCE(AVG(gr.rating), 0) AS avg_rating
       FROM stories s
       JOIN story_versions v ON v.story_id = s.id AND v.is_published = true
-      LEFT JOIN story_ratings sr ON sr.story_id = s.id
+      LEFT JOIN story_runs r ON r.story_id = s.id
+      LEFT JOIN genre_ratings gr ON gr.run_id = r.id
     `;
 
     // Optional genre join
@@ -217,9 +218,10 @@ router.get("/genres", async (_req: Request, res: Response) => {
   }
 });
 
-/** GET /api/stories/:id */
-router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+/** GET /api/stories/:id  (PUBLIC: optional auth for saved flag) */
+router.get("/:id", optionalAuth, async (req: Request, res: Response) => {
   const storyId = req.params.id;
+
   try {
     const storyRes = await query(
       `
@@ -240,10 +242,17 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
 
     const story = storyRes.rows[0];
 
-    const savedRes = await query(
-      "SELECT 1 FROM saved_stories WHERE user_id=$1 AND story_id=$2",
-      [req.user!.id, storyId]
-    );
+    // ✅ saved flag only if user logged in
+    const user = (req as any).user as AuthPayload | undefined;
+    let saved = false;
+
+    if (user?.id) {
+      const savedRes = await query(
+        "SELECT 1 FROM saved_stories WHERE user_id=$1 AND story_id=$2",
+        [user.id, storyId]
+      );
+      saved = savedRes.rows.length > 0;
+    }
 
     return res.json({
       id: story.id,
@@ -252,11 +261,30 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
       summary: story.summary,
       coverImageUrl: story.cover_image_url,
       avgRating: parseFloat(story.avg_rating) || 0,
-      saved: savedRes.rows.length > 0,
+      saved,
     });
   } catch (err: any) {
     console.error("❌ /api/stories/:id error:", err?.message || err);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/slug/:slug", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const r = await query(
+      `SELECT id, slug, title, summary, cover_image, updated_at
+       FROM stories
+       WHERE slug=$1
+       LIMIT 1`,
+      [slug]
+    );
+
+    if (!r.rows.length) return res.status(404).json({ ok: false, error: "Story not found" });
+    return res.json({ ok: true, story: r.rows[0] });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 

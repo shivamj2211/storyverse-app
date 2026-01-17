@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import RatingStars from '../../../components/RatingStars';
+import { api, authHeaders, getToken } from "../../../app/lib/api";
 
 interface StoryDetail {
   id: string;
@@ -30,9 +31,11 @@ export default function StoryDetailPage({ params }: { params: { id: string } }) 
     const fetchStory = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/stories/${storyId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
+        const res = await fetch(api(`/api/stories/${storyId}`), {
+  headers: { ...authHeaders() },
+  cache: "no-store",
+});
+
         const data = await res.json();
         if (res.ok) {
           setStory(data);
@@ -54,7 +57,7 @@ export default function StoryDetailPage({ params }: { params: { id: string } }) 
       return;
     }
     setSaving(true);
-    const url = `${process.env.NEXT_PUBLIC_API_URL}/stories/${story.id}/save`;
+    const url = api(`/api/saved/${story.id}/save`);
     try {
       let res;
       if (story.saved) {
@@ -115,10 +118,11 @@ export default function StoryDetailPage({ params }: { params: { id: string } }) 
       return;
     }
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/stories/${storyId}/start`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(api(`/api/stories/${storyId}/start`), {
+  method: "POST",
+  headers: { ...authHeaders() },
+});
+
       const data = await res.json();
       if (res.ok) {
         router.push(`/read/${data.runId}`);

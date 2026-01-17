@@ -11,12 +11,14 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const savedRes = await query(
       `SELECT s.id, s.slug, s.title, s.summary, s.cover_image_url,
-              COALESCE(avg(sr.rating), 0) AS avg_rating
-       FROM saved_stories ss
-       JOIN stories s ON ss.story_id = s.id
-       LEFT JOIN story_ratings sr ON sr.story_id = s.id
-       WHERE ss.user_id=$1
-       GROUP BY s.id`,
+       COALESCE(AVG(gr.rating), 0) AS avg_rating
+FROM saved_stories ss
+JOIN stories s ON ss.story_id = s.id
+LEFT JOIN story_runs r ON r.story_id = s.id
+LEFT JOIN genre_ratings gr ON gr.run_id = r.id
+WHERE ss.user_id=$1
+GROUP BY s.id
+`,
       [userId]
     );
     const saved = savedRes.rows.map((s) => ({

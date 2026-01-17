@@ -2559,3 +2559,17 @@ button {
   border-color: rgba(148, 163, 184, 0.18) !important;
 }
 */
+
+.novel-frame { 
+  box-sizing: border-box;
+}
+
+.novel-page {
+  box-sizing: border-box;
+  padding-bottom: 14px; /* prevents last line cutoff */
+}
+
+.novel-text p {
+  margin: 0 0 10px 0;
+}
+

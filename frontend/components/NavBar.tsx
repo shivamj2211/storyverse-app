@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { api, getToken } from "../app/lib/api"; // ✅ changed (authHeaders removed)
 import ModesMenu from "./ModesMenu";
-
+import InstallPWAButton from "../components/InstallPWAButton";
 interface User {
   id: string;
   email?: string;
@@ -234,7 +234,9 @@ export default function NavBar() {
                   {user?.is_premium ? "Premium Active" : "Go Premium"}
                 </Link>
               )}
-
+<div className="hidden sm:block">
+  <InstallPWAButton />
+</div>
               {loading ? null : user ? (
                 <div className="flex items-center gap-2">
                   <ModesMenu />

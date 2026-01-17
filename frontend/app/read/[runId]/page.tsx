@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import JourneyStepper from "../../../components/JourneyStepper";
 import { api, authHeaders } from "../..//lib/api";
 import NovelPager from "../../../components/NovelPager";
+import { useAlert } from "../../../components/AlertProvider";
+
 
 type Choice = {
   genreKey: string;
@@ -61,6 +63,7 @@ export default function ReadRunPage() {
   const params = useParams<{ runId: string }>();
   const runId = params.runId;
   const router = useRouter();
+  const { showAlert } = useAlert();
 
   const [loading, setLoading] = useState(true);
 
@@ -98,6 +101,8 @@ export default function ReadRunPage() {
   const [fbSent, setFbSent] = useState(false);
   const [fbErr, setFbErr] = useState("");
 
+
+  
   async function submitFeedback() {
     setFbErr("");
     try {
@@ -195,13 +200,15 @@ export default function ReadRunPage() {
 
       if (!res.ok) {
         if (data?.error === "INSUFFICIENT_COINS") {
-          alert(`Insufficient coins. Available: ${data.available}, Required: ${data.required}`);
+          showAlert(`Insufficient coins. Available: ${data.available}, Required: ${data.required}`, {
+  title: "Insufficient Coins",
+});
           await fetchMe();
           setPaywalled((p) =>
             p ? { ...p, available: Number(data.available ?? p.available) } : p
           );
         } else {
-          alert(data?.error || "Unlock failed");
+         showAlert(data?.error || "Unlock failed", { title: "Unlock Failed" });
         }
         return;
       }
@@ -215,7 +222,7 @@ export default function ReadRunPage() {
       await fetchCurrent();
     } catch (e) {
       console.error(e);
-      alert("Unlock failed due to network error");
+      showAlert("Unlock failed due to network error", { title: "Network Error" });
     }
   }
 
@@ -239,7 +246,7 @@ export default function ReadRunPage() {
   async function submitRating() {
     if (!current?.node?.id) return;
     if (!rating) {
-      alert("Please select a rating (1 to 5).");
+      showAlert("Please select a rating (1 to 5).", { title: "Rating Required" });
       return;
     }
 
@@ -253,7 +260,7 @@ export default function ReadRunPage() {
       if (!res.ok) {
         const msg = await res.text();
         console.error("RATE ERROR:", msg);
-        alert(msg || "Rating failed. Please try again.");
+        showAlert(msg || "Rating failed. Please try again.", { title: "Rating Failed" });
         return;
       }
 
@@ -264,7 +271,7 @@ export default function ReadRunPage() {
       await fetchMe();
     } catch (e) {
       console.error(e);
-      alert("Rating failed due to network error.");
+      showAlert("Rating failed due to network error.", { title: "Network Error" });
     }
   }
 
@@ -272,7 +279,7 @@ export default function ReadRunPage() {
     if (!current) return;
 
     if (!ratingSubmitted && !current.node.isStart) {
-      alert("Please rate before choosing.");
+      showAlert("Please rate before choosing.", { title: "Rating Required" });
       return;
     }
 
@@ -301,7 +308,7 @@ export default function ReadRunPage() {
 
         const msg = await res.text();
         console.error(msg);
-        alert("Could not proceed. Please try again.");
+        showAlert("Could not proceed. Please try again.", { title: "Try Again" });
         return;
       }
 
@@ -314,7 +321,7 @@ export default function ReadRunPage() {
       await fetchJourney();
     } catch (e) {
       console.error(e);
-      alert("Network error.");
+      showAlert("Network error.", { title: "Network Error" });
     }
   }
 
@@ -323,7 +330,7 @@ export default function ReadRunPage() {
     if (current.node.stepNo < 5) return;
 
     if (!ratingSubmitted) {
-      alert("Please rate the final chapter before finishing.");
+      showAlert("Please rate the final chapter before finishing.", { title: "Rating Required" });
       return;
     }
 
@@ -337,7 +344,7 @@ export default function ReadRunPage() {
       if (!res.ok) {
         const msg = await res.text();
         console.error(msg);
-        alert("Finish failed. Please try again.");
+        showAlert("Finish failed. Please try again.", { title: "Finish Failed" });
         return;
       }
 
@@ -351,7 +358,7 @@ export default function ReadRunPage() {
       await fetchJourney();
     } catch (e) {
       console.error(e);
-      alert("Finish failed due to network error.");
+      showAlert("Finish failed due to network error.", { title: "Network Error" });
     } finally {
       setFinishing(false);
     }
@@ -374,9 +381,9 @@ export default function ReadRunPage() {
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(shareUrl);
-      alert("Link copied!");
+      showAlert("Link copied!", { title: "Copied" });
     } catch {
-      alert("Copy failed. You can manually copy the URL from browser.");
+      showAlert("Copy failed. You can manually copy the URL from browser.", { title: "Copy Failed" });
     }
   }
 

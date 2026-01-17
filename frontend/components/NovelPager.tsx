@@ -13,51 +13,77 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-function splitIntoPagesByApprox(text: string, charsPerPage: number): string[] {
+function splitIntoPagesByMeasure(text: string, measureEl: HTMLDivElement, maxHeight: number) {
   const clean = (text || "").replace(/\r\n/g, "\n").trim();
   if (!clean) return [""];
 
-  const parts = clean.split(/\n{2,}/g).map((p) => p.trim()).filter(Boolean);
+  // keep paragraph breaks
+  const paragraphs = clean.split(/\n{2,}/g).map((p) => p.trim()).filter(Boolean);
 
   const pages: string[] = [];
-  let buf = "";
 
-  const pushBuf = () => {
-    pages.push(buf.trim());
-    buf = "";
+  const fits = (candidate: string) => {
+    measureEl.innerHTML = candidate
+      .split("\n\n")
+      .map((p) => `<p>${escapeHtml(p)}</p>`)
+      .join("");
+    return measureEl.scrollHeight <= maxHeight;
   };
 
-  for (const para of parts) {
-    const addition = (buf ? "\n\n" : "") + para;
+  let i = 0;
+  while (i < paragraphs.length) {
+    // Try to fit as many paragraphs as possible
+    let lo = i;
+    let hi = paragraphs.length;
 
-    if ((buf + addition).length <= charsPerPage) {
-      buf += addition;
+    // Binary search max paragraph index that fits
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      const candidate = paragraphs.slice(i, mid).join("\n\n");
+      if (fits(candidate)) lo = mid;
+      else hi = mid - 1;
+    }
+
+    // If even a single paragraph doesn't fit -> split by words
+    if (lo === i) {
+      const words = paragraphs[i].split(/\s+/);
+      let wLo = 1;
+      let wHi = words.length;
+
+      while (wLo < wHi) {
+        const mid = Math.ceil((wLo + wHi) / 2);
+        const candidate = words.slice(0, mid).join(" ");
+        if (fits(candidate)) wLo = mid;
+        else wHi = mid - 1;
+      }
+
+      const pageText = words.slice(0, wLo).join(" ");
+      pages.push(pageText);
+
+      // remaining words stay as next paragraph chunk
+      const rest = words.slice(wLo).join(" ").trim();
+      if (rest) paragraphs[i] = rest;
+      else i++;
       continue;
     }
 
-    if (buf) pushBuf();
-
-    if (para.length > charsPerPage) {
-      const words = para.split(/\s+/);
-      let line = "";
-      for (const w of words) {
-        const candidate = line ? line + " " + w : w;
-        if (candidate.length > charsPerPage) {
-          pages.push(line.trim());
-          line = w;
-        } else {
-          line = candidate;
-        }
-      }
-      if (line.trim()) pages.push(line.trim());
-    } else {
-      buf = para;
-    }
+    // push the page
+    pages.push(paragraphs.slice(i, lo).join("\n\n"));
+    i = lo;
   }
 
-  if (buf.trim()) pushBuf();
   return pages.length ? pages : [clean];
 }
+
+function escapeHtml(s: string) {
+  return (s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 
 export default function NovelPager({ text, runId, nodeId }: Props) {
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -123,27 +149,27 @@ export default function NovelPager({ text, runId, nodeId }: Props) {
     if (!frame || !measure) return;
 
     const compute = () => {
-      const rect = frame.getBoundingClientRect();
-      const height = rect.height;
+  const frame = frameRef.current;
+  const measure = measureRef.current;
+  if (!frame || !measure) return;
 
-      const styles = window.getComputedStyle(measure);
-      const lineHeight = parseFloat(styles.lineHeight || "20") || 20;
-      const linesPerPage = clamp(Math.floor(height / lineHeight) - 1, 18, 30);
+  const rect = frame.getBoundingClientRect();
 
-      const probe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-      const w = measure.scrollWidth || measure.getBoundingClientRect().width;
-      const avgCharWidth = w / probe.length || 8;
+  // ✅ IMPORTANT: leave safe padding so last line never clips
+  const safeBottom = 18; // px buffer
+  const maxHeight = Math.max(120, frame.clientHeight - safeBottom);
 
-      const charsPerLine = clamp(Math.floor(rect.width / avgCharWidth), 35, 90);
-      const charsPerPage = linesPerPage * charsPerLine;
+  // ✅ Make measure width same as frame width so wrapping matches
+  measure.style.width = `${frame.clientWidth}px`;
 
-      const newPages = splitIntoPagesByApprox(text, charsPerPage);
-      setPages(newPages);
+  const newPages = splitIntoPagesByMeasure(text, measure, maxHeight);
+  setPages(newPages);
 
-      const maxIdx = Math.max(0, newPages.length - 1);
-      setPageIndex((p) => clamp(p, 0, maxIdx));
-      setBookmarkIndex((b) => (b == null ? null : clamp(b, 0, maxIdx)));
-    };
+  const maxIdx = Math.max(0, newPages.length - 1);
+  setPageIndex((p) => clamp(p, 0, maxIdx));
+  setBookmarkIndex((b) => (b == null ? null : clamp(b, 0, maxIdx)));
+};
+
 
     compute();
     const ro = new ResizeObserver(() => compute());
